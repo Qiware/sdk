@@ -62,6 +62,13 @@ void *sdk_worker_routine(void *_ctx);
 
 sdk_worker_t *sdk_worker_get_by_idx(sdk_cntx_t *ctx, int idx);
 
+int sdk_mesg_send_ping_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
+int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
+
+int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
+int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
+int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr);
+
 /* 对外接口 */
 sdk_cntx_t *sdk_init(const sdk_conf_t *conf);
 int sdk_launch(sdk_cntx_t *ctx);

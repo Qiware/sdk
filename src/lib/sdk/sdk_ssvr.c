@@ -33,8 +33,6 @@ static int sdk_ssvr_send_data(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 
 static int sdk_ssvr_clear_mesg(sdk_ssvr_t *ssvr);
 
-static int sdk_ssvr_kpalive_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
-static int sdk_ssvr_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 static int sdk_ssvr_update_conn_info(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 
 static int sdk_ssvr_cmd_proc_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int rqid);
@@ -248,134 +246,6 @@ void *sdk_ssvr_routine(void *_ctx)
     return (void *)-1;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-/******************************************************************************
- **函数名称: sdk_ssvr_kpalive_req
- **功    能: 发送保活命令
- **输入参数:
- **     ctx: 全局信息
- **     ssvr: Snd线程对象
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项:
- **     因发送KeepAlive请求时，说明链路空闲时间较长，
- **     因此发送数据时，不用判断EAGAIN的情况是否存在。
- **作    者: # Qifeng.zou # 2015.01.14 #
- ******************************************************************************/
-static int sdk_ssvr_kpalive_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
-{
-    void *addr;
-    mesg_header_t *head;
-    int size = sizeof(mesg_header_t);
-    sdk_sct_t *sck = &ssvr->sck;
-    wiov_t *send = &ssvr->sck.send;
-
-    /* 1. 上次发送保活请求之后 仍未收到应答 */
-    if ((sck->fd < 0)
-        || (SDK_KPALIVE_STAT_SENT == sck->kpalive
-            && sck->kpalive_times > 3 ))
-    {
-        CLOSE(sck->fd);
-        wiov_clean(send);
-        log_error(ssvr->log, "Didn't get keepalive respond for a long time!");
-        return SDK_OK;
-    }
-
-    addr = (void *)calloc(1, size);
-    if (NULL == addr) {
-        log_error(ssvr->log, "Alloc memory failed!");
-        return SDK_ERR;
-    }
-
-    /* 2. 设置心跳数据 */
-    head = (mesg_header_t *)addr;
-
-    head->cmd = CMD_PING;
-    head->len = 0;
-    head->flag = 0;
-    head->from = ctx->sid;
-
-    /* 3. 加入发送列表 */
-    if (list_rpush(sck->mesg_list, addr)) {
-        free(addr);
-        log_error(ssvr->log, "Insert list failed!");
-        return SDK_ERR;
-    }
-
-    log_debug(ssvr->log, "Add keepalive request success! fd:[%d]", sck->fd);
-
-    ++sck->kpalive_times;
-    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SENT);
-    return SDK_OK;
-}
-
-/******************************************************************************
- **函数名称: sdk_ssvr_online_req
- **功    能: 发送ONLINE命令
- **输入参数:
- **     ctx: 全局信息
- **     ssvr: Snd线程对象
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项: 连接建立后, 则发送ONLINE请求.
- **作    者: # Qifeng.zou # 2016.11.08 17:52:19 #
- ******************************************************************************/
-static int sdk_ssvr_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
-{
-    void *addr;
-    size_t size;
-    mesg_header_t *head;
-    sdk_sct_t *sck = &ssvr->sck;
-    sdk_conf_t *conf = &ctx->conf;
-    sdk_conn_info_t *info = &ssvr->conn_info;
-    Mesg__Online online = MESG__ONLINE__INIT;
-
-    /* > 设置ONLINE字段 */
-    online.cid = conf->clientid;
-    online.appkey = conf->appkey;
-    online.version = conf->version;
-    online.token = info->token;
-
-    /* > 申请内存空间 */
-    size = sizeof(mesg_header_t) + mesg__online__get_packed_size(&online);
-
-    addr = (void *)calloc(1, size);
-    if (NULL == addr) {
-        log_error(ssvr->log, "Alloc memory failed! errmsg:[%d] %s!", errno, strerror(errno));
-        return SDK_ERR;
-    }
-
-    /* 2. 设置心跳数据 */
-    head = (mesg_header_t *)addr;
-
-    head->cmd = CMD_ONLINE;
-    head->len = size - sizeof(mesg_header_t);
-    head->flag = 0;
-    head->from = ctx->sid;
-
-    /* 3. 加入发送列表 */
-    if (list_rpush(sck->mesg_list, addr)) {
-        free(addr);
-        log_error(ssvr->log, "Insert list failed!");
-        return SDK_ERR;
-    }
-
-    log_debug(ssvr->log, "Add keepalive request success! fd:[%d]", sck->fd);
-
-    ++sck->kpalive_times;
-    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SENT);
-    return SDK_OK;
-}
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 /******************************************************************************
  **函数名称: sdk_ssvr_get_curr
  **功    能: 获取当前发送线程的上下文
@@ -403,7 +273,18 @@ static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx)
     return (sdk_ssvr_t *)(ctx->sendtp->data + id * sizeof(sdk_ssvr_t));
 }
 
-/* 重连 */
+/******************************************************************************
+ **函数名称: sdk_ssvr_reconn
+ **功    能: 重连
+ **输入参数:
+ **     item: IP+PORT
+ **     ssvr: 读写服务
+ **输出参数: NONE
+ **返    回: Address of sndsvr
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2015.01.14 #
+ ******************************************************************************/
 static int sdk_ssvr_reconn(ip_port_t *item, sdk_ssvr_t *ssvr)
 {
     sdk_sct_t *sck = &ssvr->sck;
@@ -442,14 +323,13 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 
     /* 如果网路已断开, 则进行重连 */
     if (sck->fd < 0) {
-        if (curr_tm > info->expire) { // 更新
+        if (curr_tm > info->expire) { /* 判断CONN INFO是否过期 */
             if (sdk_ssvr_update_conn_info(ctx, ssvr)) {
                 log_error(ssvr->log, "Update conn information failed!");
                 return -1;
             }
         }
 
-        /* 3.1 连接合法性判断 */
         sdk_ssvr_clear_mesg(ssvr);
 
         if (NULL == list_find(info->iplist, (find_cb_t)sdk_ssvr_reconn, (void *)ssvr)) {
@@ -459,7 +339,7 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
             return SDK_ERR;
         }
 
-        sdk_ssvr_online_req(ctx, ssvr);
+        sdk_mesg_send_online_req(ctx, ssvr);
 
         ssvr->sleep_sec = SDK_RECONN_INTV;
         sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_UNKNOWN);
@@ -472,7 +352,7 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     }
 
     /* 2. 发送保活请求 */
-    if (sdk_ssvr_kpalive_req(ctx, ssvr)) {
+    if (sdk_mesg_send_ping_req(ctx, ssvr)) {
         log_error(ssvr->log, "Connection keepalive failed!");
         return SDK_ERR;
     }
@@ -629,7 +509,9 @@ static int sdk_ssvr_data_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
 
         /* 2.3 如果是系统消息 */
         if (sdk_is_sys_mesg(head->cmd)) {
-            sdk_sys_mesg_proc(ctx, ssvr, sck, recv->optr);
+            if (sdk_sys_mesg_proc(ctx, ssvr, sck, recv->optr)) {
+                return SDK_ERR;
+            }
         }
         else {
             sdk_exp_mesg_proc(ctx, ssvr, sck, recv->optr);
@@ -893,6 +775,7 @@ static bool sdk_is_sys_mesg(uint16_t cmd)
     switch (cmd) {
         case CMD_PING:
         case CMD_PONG:
+        case CMD_ONLINE_ACK:
             return true;
     }
     return false;
@@ -917,14 +800,11 @@ static int sdk_sys_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
 
     switch (head->cmd) {
         case CMD_PONG:      /* 保活应答 */
-            sck->kpalive_times = 0;
-            sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SUCC);
-            return SDK_OK;
+            return sdk_mesg_pong_handler(ctx, ssvr, sck);
         case CMD_PING:      /* 保活请求 */
-            sck->kpalive_times = 0;
-            sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SUCC);
-            sdk_ssvr_kpalive_req(ctx, ssvr);
-            return SDK_OK;
+            return sdk_mesg_ping_handler(ctx, ssvr, sck);
+        case CMD_ONLINE_ACK:
+            return sdk_mesg_online_ack_handler(ctx, ssvr, sck, addr);
     }
 
     log_error(ssvr->log, "Unknown type [%d]!", head->cmd);
@@ -1141,6 +1021,8 @@ static int sdk_ssvr_http_conn_info(sdk_cntx_t *ctx, char *conn_info_str)
     /* free the custom headers */
     curl_slist_free_all(chunk);
 
+    log_debug(ctx->log, "data:%s", conn_info_str);
+
     return ret;
 }
 
@@ -1159,7 +1041,8 @@ static int sdk_ssvr_http_conn_info(sdk_cntx_t *ctx, char *conn_info_str)
 static int sdk_ssvr_parse_conn_info(
         sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const char *conn_info_str)
 {
-    int ip_list_len;
+    time_t ctm = time(NULL);
+    int ret = -1, ip_list_len;
     ip_port_t *item, ip_item;
     sdk_conn_info_t *conn_info = &ssvr->conn_info;
     cJSON *info, *code, *data, *expire, *token, *iplist, *ip, *sessionid;
@@ -1193,7 +1076,7 @@ static int sdk_ssvr_parse_conn_info(
             break;
         }
 
-        conn_info->expire = time(NULL) + expire->valueint;
+        conn_info->expire = ctm + expire->valueint;
 
         /* > 解析数据信息-TOKEN */
         token = cJSON_GetObjectItem(data, "token");
@@ -1244,12 +1127,16 @@ static int sdk_ssvr_parse_conn_info(
             log_error(ctx->log, "Get sessionid failed! info:%s", conn_info_str);
             break;
         }
-        conn_info->sessionid = (uint64_t)sessionid->valueint;
+        conn_info->sessionid = (uint64_t)sessionid->valuedouble;
+        ret = 0;
     } while(0);
 
     cJSON_Delete(info);
 
-    return 0;
+    log_debug(ctx->log, "expire:%d token:%s sid:%lu",
+            conn_info->expire - ctm, conn_info->token, conn_info->sessionid);
+
+    return ret;
 }
 
 /******************************************************************************

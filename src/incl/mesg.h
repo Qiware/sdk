@@ -83,7 +83,7 @@ typedef struct
 
 #define SDK_HEAD_NTOH(s, d) do {\
     (d)->cmd = ntohs((s)->cmd); \
-    (d)->flag = ntohl((s)->flag); \
+    (d)->flag = ntohs((s)->flag); \
     (d)->len = ntohl((s)->len); \
     (d)->from = ntoh64((s)->from); \
     (d)->to = ntoh64((s)->to); \
@@ -96,7 +96,7 @@ typedef struct
 
 #define SDK_HEAD_HTON(s, d) do {\
     (d)->cmd = htons((s)->cmd); \
-    (d)->flag = htonl((s)->flag); \
+    (d)->flag = htons((s)->flag); \
     (d)->len = htonl((s)->len); \
     (d)->from = hton64((s)->from); \
     (d)->to = hton64((s)->to); \
@@ -108,6 +108,6 @@ typedef struct
 } while(0)
 
 /* 校验数据头 */
-#define SDK_HEAD_ISVALID(head) (head->len > 1024*1024*1024)
+#define SDK_HEAD_ISVALID(head) (head->len < 1024*1024*1024)
 
 #endif /*__PROTO_H__*/
