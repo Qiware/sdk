@@ -2,6 +2,7 @@
 #define __HASH_TAB_H__
 
 #include "comm.h"
+#include "lock.h"
 
 /* 选线 */
 typedef struct

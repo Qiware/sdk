@@ -1,8 +1,17 @@
+#include "str.h"
+#include "sdk.h"
 #include "redo.h"
 #include "queue.h"
-#include "sdk.h"
 #include "sdk_mesg.h"
 #include "sdk_comm.h"
+#include "mesg.pb-c.h"
+
+#include <curl/curl.h>
+#include <cjson/cJSON.h>
+
+#define URL_MAX_LEN (1024)
+#define SDK_HOST_MAX_LEN    (256)
+#define SDK_CONN_INFO_MAX_LEN    (1024)
 
 /* 静态函数 */
 static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx);
@@ -25,6 +34,8 @@ static int sdk_ssvr_send_data(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 static int sdk_ssvr_clear_mesg(sdk_ssvr_t *ssvr);
 
 static int sdk_ssvr_kpalive_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
+static int sdk_ssvr_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
+static int sdk_ssvr_update_conn_info(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 
 static int sdk_ssvr_cmd_proc_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int rqid);
 static int sdk_ssvr_cmd_proc_all_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
@@ -47,14 +58,25 @@ int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int idx)
     sdk_conf_t *conf = &ctx->conf;
     sdk_sct_t *sck = &ssvr->sck;
     sdk_snap_t *recv = &sck->recv;
+    sdk_conn_info_t *info = &ssvr->conn_info;
 
     ssvr->id = idx;
     ssvr->log = ctx->log;
     ssvr->ctx = (void *)ctx;
     ssvr->sck.fd = INVALID_FD;
+    ssvr->sleep_sec = 1;
 
     /* > 创建发送队列 */
     ssvr->sendq = ctx->sendq[idx];
+
+    /* > 连接信息 */
+    memset(info, 0, sizeof(sdk_conn_info_t));
+
+    info->iplist = list_creat(NULL);
+    if (NULL == info->iplist) {
+        log_error(ssvr->log, "Create ip list failed!");
+        return SDK_ERR;
+    }
 
     /* > 创建unix套接字 */
     if (sdk_ssvr_creat_usck(ssvr, conf)) {
@@ -133,21 +155,24 @@ void sdk_ssvr_set_rwset(sdk_ssvr_t *ssvr)
 
     FD_SET(ssvr->cmd_sck_id, &ssvr->rset);
 
-    ssvr->max = MAX(ssvr->cmd_sck_id, ssvr->sck.fd);
+    ssvr->max = ssvr->cmd_sck_id;
 
-    /* 1 设置读集合 */
-    FD_SET(ssvr->sck.fd, &ssvr->rset);
+    if (ssvr->sck.fd > 0) {
+        ssvr->max = MAX(ssvr->cmd_sck_id, ssvr->sck.fd);
 
-    /* 2 设置写集合: 发送至接收端 */
-    if (!list_empty(ssvr->sck.mesg_list)
-        || !queue_empty(ssvr->sendq))
-    {
-        FD_SET(ssvr->sck.fd, &ssvr->wset);
-        return;
-    }
-    else if (!wiov_isempty(&ssvr->sck.send)) {
-        FD_SET(ssvr->sck.fd, &ssvr->wset);
-        return;
+        /* 1 设置读集合 */
+        FD_SET(ssvr->sck.fd, &ssvr->rset);
+
+        /* 2 设置写集合: 发送至接收端 */
+        if (!list_empty(ssvr->sck.mesg_list)
+            || !queue_empty(ssvr->sendq)) {
+            FD_SET(ssvr->sck.fd, &ssvr->wset);
+            return;
+        }
+        else if (!wiov_isempty(&ssvr->sck.send)) {
+            FD_SET(ssvr->sck.fd, &ssvr->wset);
+            return;
+        }
     }
 
     return;
@@ -166,12 +191,11 @@ void sdk_ssvr_set_rwset(sdk_ssvr_t *ssvr)
  ******************************************************************************/
 void *sdk_ssvr_routine(void *_ctx)
 {
+    int ret;
     sdk_sct_t *sck;
     sdk_ssvr_t *ssvr;
-    int ret, seconds = 4;
     struct timeval timeout;
     sdk_cntx_t *ctx = (sdk_cntx_t *)_ctx;
-    sdk_conf_t *conf = &ctx->conf;
 
     nice(-20);
 
@@ -187,31 +211,11 @@ void *sdk_ssvr_routine(void *_ctx)
 
     /* 3. 进行事件处理 */
     for (;;) {
-        /* 3.1 连接合法性判断 */
-        if (sck->fd < 0) {
-            sdk_ssvr_clear_mesg(ssvr);
-
-            Sleep(seconds);
-
-            /* 重连Recv端 */
-            if ((sck->fd = tcp_connect(AF_INET, conf->ipaddr, conf->port)) < 0) {
-                log_error(ssvr->log, "Conncet [%s:%d] failed! errmsg:[%d] %s!",
-                      conf->ipaddr, conf->port, errno, strerror(errno));
-                if (seconds < 300) {
-                    seconds *= 2;
-                }
-                continue;
-            }
-
-            seconds = SDK_RECONN_INTV;
-            sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_UNKNOWN);
-        }
-
         /* 3.2 等待事件通知 */
         sdk_ssvr_set_rwset(ssvr);
 
-        timeout.tv_sec = SDK_SSVR_TMOUT_SEC;
-        timeout.tv_usec = SDK_SSVR_TMOUT_USEC;
+        timeout.tv_sec = ssvr->sleep_sec;
+        timeout.tv_usec = 0;
         ret = select(ssvr->max+1, &ssvr->rset, &ssvr->wset, NULL, &timeout);
         if (ret < 0) {
             if (EINTR == errno) { continue; }
@@ -243,6 +247,9 @@ void *sdk_ssvr_routine(void *_ctx)
     abort();
     return (void *)-1;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 
 /******************************************************************************
  **函数名称: sdk_ssvr_kpalive_req
@@ -306,6 +313,70 @@ static int sdk_ssvr_kpalive_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 }
 
 /******************************************************************************
+ **函数名称: sdk_ssvr_online_req
+ **功    能: 发送ONLINE命令
+ **输入参数:
+ **     ctx: 全局信息
+ **     ssvr: Snd线程对象
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项: 连接建立后, 则发送ONLINE请求.
+ **作    者: # Qifeng.zou # 2016.11.08 17:52:19 #
+ ******************************************************************************/
+static int sdk_ssvr_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
+{
+    void *addr;
+    size_t size;
+    mesg_header_t *head;
+    sdk_sct_t *sck = &ssvr->sck;
+    sdk_conf_t *conf = &ctx->conf;
+    sdk_conn_info_t *info = &ssvr->conn_info;
+    Mesg__Online online = MESG__ONLINE__INIT;
+
+    /* > 设置ONLINE字段 */
+    online.cid = conf->clientid;
+    online.appkey = conf->appkey;
+    online.version = conf->version;
+    online.token = info->token;
+
+    /* > 申请内存空间 */
+    size = sizeof(mesg_header_t) + mesg__online__get_packed_size(&online);
+
+    addr = (void *)calloc(1, size);
+    if (NULL == addr) {
+        log_error(ssvr->log, "Alloc memory failed! errmsg:[%d] %s!", errno, strerror(errno));
+        return SDK_ERR;
+    }
+
+    /* 2. 设置心跳数据 */
+    head = (mesg_header_t *)addr;
+
+    head->cmd = CMD_ONLINE;
+    head->len = size - sizeof(mesg_header_t);
+    head->flag = 0;
+    head->from = ctx->sid;
+
+    /* 3. 加入发送列表 */
+    if (list_rpush(sck->mesg_list, addr)) {
+        free(addr);
+        log_error(ssvr->log, "Insert list failed!");
+        return SDK_ERR;
+    }
+
+    log_debug(ssvr->log, "Add keepalive request success! fd:[%d]", sck->fd);
+
+    ++sck->kpalive_times;
+    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SENT);
+    return SDK_OK;
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+/******************************************************************************
  **函数名称: sdk_ssvr_get_curr
  **功    能: 获取当前发送线程的上下文
  **输入参数:
@@ -332,6 +403,23 @@ static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx)
     return (sdk_ssvr_t *)(ctx->sendtp->data + id * sizeof(sdk_ssvr_t));
 }
 
+/* 重连 */
+static int sdk_ssvr_reconn(ip_port_t *item, sdk_ssvr_t *ssvr)
+{
+    sdk_sct_t *sck = &ssvr->sck;
+
+    /* > 重连接入层 */
+    if ((sck->fd = tcp_connect(AF_INET, item->ipaddr, item->port)) < 0) {
+        log_error(ssvr->log, "Conncet [%s:%d] failed! errmsg:[%d] %s!",
+                item->ipaddr, item->port, errno, strerror(errno));
+        return false;
+    }
+
+    ssvr->sleep_sec = SDK_RECONN_INTV;
+
+    return true;
+}
+
 /******************************************************************************
  **函数名称: sdk_ssvr_timeout_hdl
  **功    能: 超时处理
@@ -350,6 +438,33 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     time_t curr_tm = time(NULL);
     sdk_sct_t *sck = &ssvr->sck;
+    sdk_conn_info_t *info = &ssvr->conn_info;
+
+    /* 如果网路已断开, 则进行重连 */
+    if (sck->fd < 0) {
+        if (curr_tm > info->expire) { // 更新
+            if (sdk_ssvr_update_conn_info(ctx, ssvr)) {
+                log_error(ssvr->log, "Update conn information failed!");
+                return -1;
+            }
+        }
+
+        /* 3.1 连接合法性判断 */
+        sdk_ssvr_clear_mesg(ssvr);
+
+        if (NULL == list_find(info->iplist, (find_cb_t)sdk_ssvr_reconn, (void *)ssvr)) {
+            if (ssvr->sleep_sec < 300) {
+                ssvr->sleep_sec = (!ssvr->sleep_sec)? SDK_RECONN_INTV : 2*ssvr->sleep_sec;
+            }
+            return SDK_ERR;
+        }
+
+        sdk_ssvr_online_req(ctx, ssvr);
+
+        ssvr->sleep_sec = SDK_RECONN_INTV;
+        sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_UNKNOWN);
+        return SDK_OK;
+    }
 
     /* 1. 判断是否长时无数据 */
     if ((curr_tm - sck->wrtm) < SDK_KPALIVE_INTV) {
@@ -582,10 +697,14 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
             }
             return SDK_OK;
         case SDK_CMD_NETWORK_ON:
+            CLOSE(sck->fd);
+            wiov_clean(send);
+            ssvr->sleep_sec = 0;
             return SDK_OK;
         case SDK_CMD_NETWORK_OFF:
             CLOSE(sck->fd);
             wiov_clean(send);
+            ssvr->sleep_sec = SDK_RECONN_INTV;
             return SDK_OK;
         default:
             log_error(ssvr->log, "Unknown command! type:[%d]", cmd->type);
@@ -925,3 +1044,263 @@ static int sdk_ssvr_cmd_proc_all_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 
     return SDK_OK;
 }
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+/******************************************************************************
+ **函数名称: sdk_ssvr_write_conn_info
+ **功    能: 接收HTTP返回的数据
+ **输入参数:
+ **     ptr: 收到的数据
+ **     size: 数据长度
+ **     nmemb: 内存块数
+ **     stream: 存储数据的空间(用户定义)
+ **输出参数: NONE
+ **返    回: 接收数据的长度
+ **实现描述: 返回值必须为size * nmemb, 否则会中断数据的接口.
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.07 16:52:04 #
+ ******************************************************************************/
+static size_t sdk_ssvr_write_conn_info(void *ptr, size_t size, size_t nmemb, void *stream)
+{
+    fprintf(stderr, "Call %s()! size:%lu nmemb:%lu", __func__, size, nmemb);
+
+    if (strlen((char *)stream) + strlen((char *)ptr) > SDK_CONN_INFO_MAX_LEN) {
+        return 0;
+    }
+
+    strcat(stream, (char *)ptr);
+
+    return size*nmemb;
+}
+
+/******************************************************************************
+ **函数名称: sdk_ssvr_http_conn_info
+ **功    能: 通过HTTPSVR获取连接信息
+ **输入参数:
+ **     ctx: 全局对象
+ **     ssvr: 接收服务
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述: 通过libcurl访问/client/conninfo接口, 获取连接信息
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.07 14:38:04 #
+ ******************************************************************************/
+static int sdk_ssvr_http_conn_info(sdk_cntx_t *ctx, char *conn_info_str)
+{
+    CURL *curl;
+    CURLcode ret = -1;
+    sdk_conf_t *conf = &ctx->conf;
+    struct curl_slist *chunk = NULL;
+    char host[SDK_HOST_MAX_LEN], url[URL_MAX_LEN];
+
+    curl = curl_easy_init();
+    if (NULL == curl) {
+        log_error(ctx->log, "Initialize curl failed!");
+        return -1;
+    }
+
+    /* Remove a header curl would otherwise add by itself */
+    chunk = curl_slist_append(chunk, "Accept:");
+
+    /* Add a custom header */
+    chunk = curl_slist_append(chunk, "Another: yes");
+
+    /* Modify a header curl otherwise adds differently */
+    snprintf(host, sizeof(host), "Host: %s", conf->httpsvr);
+    chunk = curl_slist_append(chunk, host);
+
+    /* Add a header with "blank" contents to the right of the colon. Note that
+     *        we're then using a semicolon in the string we pass to curl! */
+    chunk = curl_slist_append(chunk, "X-silly-header;");
+
+    /* set our custom set of headers */
+    ret = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, sdk_ssvr_write_conn_info);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, conn_info_str);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3);
+
+    snprintf(url, sizeof(url), "%s/client/conInfo?clientid=%s&app_key=%s&vlink=1",
+            conf->httpsvr, conf->clientid, conf->appkey);
+    log_debug(ctx->log, "url: %s!", url);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    //curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+
+    ret = curl_easy_perform(curl);
+    /* Check for errors */
+    if(CURLE_OK != ret) {
+        log_error(ctx->log, "Exec curl_easy_perform() failed! errmsg:[%d] %s!",
+                ret, curl_easy_strerror(ret));
+    }
+
+    /* always cleanup */
+    curl_easy_cleanup(curl);
+
+    /* free the custom headers */
+    curl_slist_free_all(chunk);
+
+    return ret;
+}
+
+/******************************************************************************
+ **函数名称: sdk_ssvr_parse_conn_info
+ **功    能: 解析HTTPSVR获取连接信息
+ **输入参数:
+ **     ctx: 全局对象
+ **     ssvr: 接收服务
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述: 通过libcurl访问/client/conninfo接口, 获取连接信息
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.07 14:38:04 #
+ ******************************************************************************/
+static int sdk_ssvr_parse_conn_info(
+        sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const char *conn_info_str)
+{
+    int ip_list_len;
+    ip_port_t *item, ip_item;
+    sdk_conn_info_t *conn_info = &ssvr->conn_info;
+    cJSON *info, *code, *data, *expire, *token, *iplist, *ip, *sessionid;
+
+    /* > 解析JSON数据 */
+    info = cJSON_Parse(conn_info_str);
+    if (NULL == info) {
+        log_error(ctx->log, "Parse conn info failed! info:%s", conn_info_str);
+        return -1;
+    }
+
+    do {
+        /* > 解析错误码 */
+        code = cJSON_GetObjectItem(info, "code");
+        if (NULL == code || 0 != atoi(code->valuestring)) {
+            log_error(ctx->log, "Get conn info failed! info:%s", conn_info_str);
+            break;
+        }
+
+        /* > 解析数据信息 */
+        data = cJSON_GetObjectItem(info, "data");
+        if (NULL == data) {
+            log_error(ctx->log, "Get data failed! info:%s", conn_info_str);
+            break;
+        }
+
+        /* > 解析数据信息-TOKEN超时时间 */
+        expire = cJSON_GetObjectItem(data, "expire");
+        if (NULL == expire || 0 == expire->valueint) {
+            log_error(ctx->log, "Get expire failed! info:%s", conn_info_str);
+            break;
+        }
+
+        conn_info->expire = time(NULL) + expire->valueint;
+
+        /* > 解析数据信息-TOKEN */
+        token = cJSON_GetObjectItem(data, "token");
+        if (NULL == token || 0 == strlen(token->valuestring)) {
+            log_error(ctx->log, "Get token failed! info:%s", conn_info_str);
+            break;
+        }
+
+        snprintf(conn_info->token, sizeof(conn_info->token), "%s", token->valuestring);
+
+        /* > 解析数据信息-IPLIST */
+        iplist = cJSON_GetObjectItem(data, "ipList");
+        if (NULL == iplist) {
+            log_error(ctx->log, "Get expire info failed! info:%s", conn_info_str);
+            break;
+        }
+
+        ip_list_len = cJSON_GetArraySize(iplist);
+        if (0 == ip_list_len) {
+            log_error(ctx->log, "Get ip list failed! info:%s", conn_info_str);
+            break;
+        }
+
+        ip = iplist->child;
+        while (NULL != ip) {
+            if (str_to_ip_port(ip->valuestring, &ip_item)) {
+                log_error(ctx->log, "Convert string to ip and port failed! info:%s", conn_info_str);
+                continue;
+            }
+
+            item = (ip_port_t *)calloc(1, sizeof(ip_port_t));
+            if (NULL == item) {
+                log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
+                continue;
+            }
+
+            snprintf(item->ipaddr, sizeof(item->ipaddr), "%s", ip_item.ipaddr);
+            item->port = ip_item.port;
+
+            list_lpush(conn_info->iplist, item);
+
+            ip = ip->next;
+        }
+
+        /* > 解析数据信息-SESSIONID */
+        sessionid = cJSON_GetObjectItem(data, "sessionid");
+        if (NULL == sessionid || 0 == sessionid->valueint) {
+            log_error(ctx->log, "Get sessionid failed! info:%s", conn_info_str);
+            break;
+        }
+        conn_info->sessionid = (uint64_t)sessionid->valueint;
+    } while(0);
+
+    cJSON_Delete(info);
+
+    return 0;
+}
+
+/******************************************************************************
+ **函数名称: sdk_ssvr_update_conn_info
+ **功    能: 更新连接信息
+ **输入参数:
+ **     ctx: 全局对象
+ **     ssvr: 发送服务
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述: 
+ **     1. 通过HTTP接口获取连接信息
+ **     2. 解析连接信息
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.08 11:14:27 #
+ ******************************************************************************/
+static int sdk_ssvr_update_conn_info(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
+{
+    ip_port_t *item;
+    char info_str[SDK_CONN_INFO_MAX_LEN];
+    sdk_conn_info_t *info = &ssvr->conn_info;
+
+    memset(info_str, 0, sizeof(info_str));
+
+    /* > 重置连接信息 */
+    info->expire = 0;
+    memset(info->token, 0, sizeof(info->token));
+    info->sessionid = 0;
+
+    do {
+        item = list_rpop(info->iplist);
+        if (NULL == item) {
+            break;
+        }
+        free(item);
+    } while (NULL != item);
+
+    /* > 获取连接信息 */
+    if (sdk_ssvr_http_conn_info(ctx, info_str)) {
+        log_error(ctx->log, "Get conn info by http failed!");
+        return -1;
+    }
+
+    /* > 解析连接信息 */
+    if (sdk_ssvr_parse_conn_info(ctx, ssvr, info_str)) {
+        log_error(ctx->log, "Parse conn info failed!");
+        return -1;
+    }
+
+    return 0;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////

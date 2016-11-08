@@ -13,14 +13,15 @@ include $(PROJ)/make/build.mak
 
 INCLUDE = -I. \
 		  -I$(PROJ)/src/incl \
-		  -I$(PROJ)/src/incl/sdk
+		  -I$(PROJ)/src/incl/sdk \
+		  -I$(PROJ)/src/incl/mesg
 INCLUDE += $(GLOBAL_INCLUDE)
 LIBS_PATH = -L$(PROJ)/lib
 # 注: 静态库请放在动态库之前
-STATIC_LINK_LIB_LIST = libcurl.a libcjson.a
+STATIC_LINK_LIB_LIST = libcjson.a
 STATIC_LINK_LIB_LIST += $(G_STATIC_LIBS)
 LIBS = $(call func_find_static_link_lib,$(STATIC_LINK_LIB_PATH),$(STATIC_LINK_LIB_LIST))
-LIBS += -lpthread
+LIBS += -lpthread -lm -lcurl -lprotobuf-c
 LIBS += $(SHARED_LIB)
 
 SRC_LIST = ./sdk.c \
@@ -46,7 +47,8 @@ SRC_LIST = ./sdk.c \
 		   ./core/xml_comm.c \
 		   ./core/xml_tree.c \
 		   ./core/xml_print.c \
-		   ./core/hash_tab.c
+		   ./core/hash_tab.c \
+		   ./mesg/mesg.pb-c.c
 
 OBJS = $(subst .c,.o, $(SRC_LIST))
 HEADS = $(call func_get_dep_head_list, $(SRC_LIST))

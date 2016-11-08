@@ -5,9 +5,9 @@
 #include "spinlock.h"
 #include "sdk_ssvr.h"
 
-#define SDK_DEV_ID_LEN      (32)
-#define SDK_CLIENT_ID_LEN   (32)
-#define SDK_APP_KEY_LEN     (64)
+#define SDK_DEV_ID_LEN      (64)
+#define SDK_CLIENT_ID_LEN   (64)
+#define SDK_APP_KEY_LEN     (128)
 
 /* 配置信息 */
 typedef struct
@@ -19,17 +19,12 @@ typedef struct
     char devid[SDK_DEV_ID_LEN];         /* 设备ID */
     char clientid[SDK_CLIENT_ID_LEN];   /* 客户端ID(必须提供) */
     char appkey[SDK_APP_KEY_LEN];       /* APP KEY */
+    char version[SDK_CLIENT_ID_LEN];    /* 客户端自身版本号(留做统计用) */
 
     int log_level;                      /* 日志级别 */
     char log_path[FILE_LINE_MAX_LEN];   /* 日志路径(路径+文件名) */
 
-    struct {
-        char usr[SDK_USR_MAX_LEN];     /* 用户名 */
-        char passwd[SDK_PWD_MAX_LEN];  /* 登录密码 */
-    } auth;                             /* 鉴权信息 */
-
-    char ipaddr[IP_ADDR_MAX_LEN];       /* 服务端IP地址 */
-    int port;                           /* 服务端端口号 */
+    char httpsvr[IP_ADDR_MAX_LEN];      /* HTTP端(IP+端口/域名) */
 
     int send_thd_num;                   /* 发送线程数 */
     int work_thd_num;                   /* 工作线程数 */

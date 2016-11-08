@@ -1,0 +1,19 @@
+package mesg;
+
+message online {
+    optional string cid = 1;                // 平台分配的客户端clientid
+    optional string token = 2;              // 登录token
+    optional string version = 3;            // 客户端自身版本号，留做统计用
+    optional string appkey = 4;             // 应用唯一性key
+}   
+
+message offline {
+    optional int32  code = 1;               // 错误码
+    optional string msg = 2;                // 错误描述
+    optional string appkey = 3;             // 应用唯一性key
+}
+
+message online_ack {
+    optional int32      code = 1;           // code=0 为OK
+    optional string     msg = 2;            // 登录结果文字描述
+}

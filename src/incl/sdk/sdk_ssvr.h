@@ -9,16 +9,16 @@
 
 /* COMM的UNIX-UDP路径 */
 #define sdk_comm_usck_path(conf, _path) \
-    snprintf(_path, sizeof(_path), "%s/rtmq/%d_comm.usck", (conf)->path, (conf)->nid)
+    snprintf(_path, sizeof(_path), "%s/.sdk/%d_comm.usck", (conf)->path, (conf)->nid)
 /* SSVR线程的UNIX-UDP路径 */
 #define sdk_ssvr_usck_path(conf, _path, id) \
-    snprintf(_path, sizeof(_path), "%s/rtmq/%d_ssvr_%d.usck", (conf)->path, (conf)->nid, id+1)
+    snprintf(_path, sizeof(_path), "%s/.sdk/%d_ssvr_%d.usck", (conf)->path, (conf)->nid, id+1)
 /* WORKER线程的UNIX-UDP路径 */
 #define sdk_worker_usck_path(conf, _path, id) \
-    snprintf(_path, sizeof(_path), "%s/rtmq/%d_swrk_%d.usck", (conf)->path, (conf)->nid, id+1)
+    snprintf(_path, sizeof(_path), "%s/.sdk/%d_swrk_%d.usck", (conf)->path, (conf)->nid, id+1)
 /* 加锁路径 */
 #define sdk_lock_path(conf, _path) \
-    snprintf(_path, sizeof(_path), "%s/rtmq/%d.lock", (conf)->path, (conf)->nid)
+    snprintf(_path, sizeof(_path), "%s/.sdk/%d.lock", (conf)->path, (conf)->nid)
 
 /* 套接字信息 */
 typedef struct
@@ -40,6 +40,16 @@ typedef struct
 
 #define sdk_set_kpalive_stat(sck, _stat) (sck)->kpalive = (_stat)
 
+/* 连接信息 */
+typedef struct
+{
+    time_t expire;                      /* TOKEN过期时间(更新时间+expire) */
+#define SDK_TOKEN_MAX_LEN   (128)
+    char token[SDK_TOKEN_MAX_LEN];      /* 鉴权TOKEN */
+    list_t *iplist;                     /* IP列表(数据类型ip_port_t) */
+    uint64_t sessionid;                 /* 会话ID */
+} sdk_conn_info_t;
+
 /* SND线程上下文 */
 typedef struct
 {
@@ -48,12 +58,15 @@ typedef struct
     log_cycle_t *log;                   /* 日志对象 */
     queue_t *sendq;                     /* 发送缓存 */
 
+    int sleep_sec;                      /* 睡眠秒 */
     int cmd_sck_id;                     /* 命令通信套接字ID */
-    sdk_sct_t sck;               /* 发送套接字 */
+    sdk_sct_t sck;                      /* 发送套接字 */
 
     int max;                            /* 套接字最大值 */
     fd_set rset;                        /* 读集合 */
     fd_set wset;                        /* 写集合 */
+
+    sdk_conn_info_t conn_info;          /* CONN INFO信息 */
 
     /* 统计信息 */
     uint64_t recv_total;                /* 获取的数据总条数 */

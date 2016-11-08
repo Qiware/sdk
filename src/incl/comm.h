@@ -67,6 +67,9 @@
 #define ISPOWEROF2(x)       (0 == (((x)-1) & (x))) /* 判断x是否为2的n次方(2^n) */
 
 /* 内存单位 */
+#define K                   (1000)              /* K */
+#define M                   (100000)            /* M */
+#define G                   (100000000)         /* G */
 #define KB                  (1024)              /* KB */
 #define MB                  (1024 * KB)         /* MB */
 #define GB                  (1024 * MB)         /* GB */
@@ -77,20 +80,12 @@ typedef struct
     union {
         struct {
             uint32_t nid:16;                    /* 结点ID */
-            uint32_t svrid:16;                    /* 服务ID */
+            uint32_t svrid:16;                  /* 服务ID(如: 接入层中接收线程的索引号) */
             uint32_t seq;                       /* 顺序号 */
         };
         uint64_t serial;                        /* 序列号 */
     };
 } serial_t;
-
-/* 锁操作[注: 无须定义UNLOCK] */
-typedef enum 
-{
-    NONLOCK             /* 不加锁 */
-    , RDLOCK            /* 加读锁 */
-    , WRLOCK            /* 加写锁 */
-} lock_e;
 
 /* KV类型 */
 typedef struct
