@@ -34,7 +34,7 @@ static int sdk_worker_cmd_proc_req_hdl(sdk_cntx_t *ctx, sdk_worker_t *worker, co
  ******************************************************************************/
 void *sdk_worker_routine(void *_ctx)
 {
-    int ret, idx;
+    int ret;
     sdk_worker_t *worker;
     sdk_cmd_proc_req_t *req;
     struct timeval timeout;
@@ -72,15 +72,11 @@ void *sdk_worker_routine(void *_ctx)
             sdk_cmd_t cmd;
             req = (sdk_cmd_proc_req_t *)&cmd.param;
 
-            for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
-                memset(&cmd, 0, sizeof(cmd));
+            memset(&cmd, 0, sizeof(cmd));
 
-                cmd.type = SDK_CMD_PROC_REQ;
-                req->num = -1;
-                req->rqidx = idx;
-
-                sdk_worker_cmd_proc_req_hdl(ctx, worker, &cmd);
-            }
+            cmd.type = SDK_CMD_PROC_REQ;
+            req->num = -1;
+            sdk_worker_cmd_proc_req_hdl(ctx, worker, &cmd);
             continue;
         }
 

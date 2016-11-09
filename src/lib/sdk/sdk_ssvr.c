@@ -35,7 +35,7 @@ static int sdk_ssvr_clear_mesg(sdk_ssvr_t *ssvr);
 
 static int sdk_ssvr_update_conn_info(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 
-static int sdk_ssvr_cmd_proc_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int rqid);
+static int sdk_ssvr_cmd_proc_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int idx);
 static int sdk_ssvr_cmd_proc_all_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 
 /******************************************************************************
@@ -50,7 +50,7 @@ static int sdk_ssvr_cmd_proc_all_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
  **注意事项:
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
-int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int idx)
+int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     void *addr;
     sdk_conf_t *conf = &ctx->conf;
@@ -58,7 +58,6 @@ int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int idx)
     sdk_snap_t *recv = &sck->recv;
     sdk_conn_info_t *info = &ssvr->conn_info;
 
-    ssvr->id = idx;
     ssvr->log = ctx->log;
     ssvr->ctx = (void *)ctx;
     ssvr->sck.fd = INVALID_FD;
@@ -862,14 +861,14 @@ static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
         return SDK_ERR_TOO_LONG;
     }
 
-   /* > 申请空间 */
+    /* > 申请空间 */
     idx = rand() % ctx->conf.work_thd_num;
 
     data = (void *)calloc(1, len);
     if (NULL == data) {
         ++ssvr->drop_total;
         log_error(ctx->log, "Alloc memory failed! drop:%lu recv:%lu",
-              ssvr->drop_total, ssvr->recv_total, len);
+                ssvr->drop_total, ssvr->recv_total, len);
         return SDK_ERR;
     }
 
@@ -879,7 +878,7 @@ static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
     if (sdk_queue_rpush(&ctx->recvq, data)) {
         ++ssvr->drop_total;
         log_error(ctx->log, "Push into queue failed! len:%d drop:%lu total:%lu",
-              len, ssvr->drop_total, ssvr->recv_total);
+                len, ssvr->drop_total, ssvr->recv_total);
         free(data);
         return SDK_ERR;
     }
@@ -895,14 +894,14 @@ static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
  **输入参数:
  **     ctx: 全局对象
  **     ssvr: 接收服务
- **     rqid: 队列ID(与工作队列ID一致)
+ **     idx: 工作线程序号
  **输出参数: NONE
  **返    回: >0:成功 <=0:失败
  **实现描述:
  **注意事项:
  **作    者: # Qifeng.zou # 2015.06.08 #
  ******************************************************************************/
-static int sdk_ssvr_cmd_proc_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int rqid)
+static int sdk_ssvr_cmd_proc_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int idx)
 {
     sdk_cmd_t cmd;
     char path[FILE_PATH_MAX_LEN];
@@ -911,12 +910,10 @@ static int sdk_ssvr_cmd_proc_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int rqid)
     memset(&cmd, 0, sizeof(cmd));
 
     cmd.type = SDK_CMD_PROC_REQ;
-    req->ori_svr_id = ssvr->id;
     req->num = -1;
-    req->rqidx = rqid;
 
     /* > 获取Worker路径 */
-    sdk_worker_usck_path(&ctx->conf, path, rqid);
+    sdk_worker_usck_path(&ctx->conf, path, idx);
 
     /* > 发送处理命令 */
     return unix_udp_send(ssvr->cmd_sck_id, path, &cmd, sizeof(sdk_cmd_t));
@@ -930,7 +927,7 @@ static int sdk_ssvr_cmd_proc_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int rqid)
  **     ssvr: 接收服务
  **输出参数: NONE
  **返    回: 0:成功 !0:失败
- **实现描述: 遍历所有接收队列, 并发送处理请求
+ **实现描述: 遍历所有工作线程, 并发送处理请求
  **注意事项:
  **作    者: # Qifeng.zou # 2015.06.08 #
  ******************************************************************************/
@@ -938,10 +935,9 @@ static int sdk_ssvr_cmd_proc_all_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     int idx;
 
-    for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
+    for (idx=0; idx<ctx->conf.work_thd_num; ++idx) {
         sdk_ssvr_cmd_proc_req(ctx, ssvr, idx);
     }
-
     return SDK_OK;
 }
 

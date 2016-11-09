@@ -5,10 +5,9 @@
 #include "spinlock.h"
 #include "sdk_ssvr.h"
 
-#define SDK_DEV_ID_LEN      (64)
-#define SDK_CLIENT_ID_LEN   (64)
-#define SDK_APP_KEY_LEN     (128)
-#define SDK_SSVR_NUM        (1)         /* 发送协程个数 */
+#define SDK_DEV_ID_LEN      (64)        /* 设备ID长度 */
+#define SDK_CLIENT_ID_LEN   (64)        /* 客户端ID长度 */
+#define SDK_APP_KEY_LEN     (128)       /* 应用KEY长度 */
 
 /* 发送单元 */
 typedef struct
@@ -54,6 +53,7 @@ typedef struct
     int cmd_sck_id;                     /* 命令套接字 */
     spinlock_t cmd_sck_lck;             /* 命令套接字锁 */
 
+    sdk_ssvr_t *ssvr;                   /* 发送服务 */
     thread_pool_t *sendtp;              /* 发送线程池 */
     thread_pool_t *worktp;              /* 工作线程池 */
 
@@ -64,7 +64,7 @@ typedef struct
 } sdk_cntx_t;
 
 /* 内部接口 */
-int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int tidx);
+int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 void *sdk_ssvr_routine(void *_ctx);
 
 int sdk_worker_init(sdk_cntx_t *ctx, sdk_worker_t *worker, int tidx);

@@ -63,32 +63,27 @@ static int sdk_creat_workers(sdk_cntx_t *ctx)
  ******************************************************************************/
 static int sdk_creat_sends(sdk_cntx_t *ctx)
 {
-    int idx;
-    sdk_ssvr_t *ssvr;
-
     /* > 创建对象 */
-    ssvr = (sdk_ssvr_t *)calloc(SDK_SSVR_NUM, sizeof(sdk_ssvr_t));
-    if (NULL == ssvr) {
+    ctx->ssvr = (sdk_ssvr_t *)calloc(1, sizeof(sdk_ssvr_t));
+    if (NULL == ctx->ssvr) {
         log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
         return SDK_ERR;
     }
 
     /* > 创建线程池 */
-    ctx->sendtp = thread_pool_init(SDK_SSVR_NUM, NULL, (void *)ssvr);
+    ctx->sendtp = thread_pool_init(1, NULL, (void *)ctx->ssvr);
     if (NULL == ctx->sendtp) {
         log_error(ctx->log, "Initialize thread pool failed!");
-        free(ssvr);
+        FREE(ctx->ssvr);
         return SDK_ERR;
     }
 
     /* > 初始化线程 */
-    for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
-        if (sdk_ssvr_init(ctx, ssvr+idx, idx)) {
-            log_fatal(ctx->log, "Initialize send thread failed!");
-            free(ssvr);
-            thread_pool_destroy(ctx->sendtp);
-            return SDK_ERR;
-        }
+    if (sdk_ssvr_init(ctx, ctx->ssvr)) {
+        log_fatal(ctx->log, "Initialize send thread failed!");
+        FREE(ctx->ssvr);
+        thread_pool_destroy(ctx->sendtp);
+        return SDK_ERR;
     }
 
     return SDK_OK;
@@ -203,9 +198,7 @@ int sdk_launch(sdk_cntx_t *ctx)
     }
 
     /* > 注册Send线程回调 */
-    for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
-        thread_pool_add_worker(ctx->sendtp, sdk_ssvr_routine, ctx);
-    }
+    thread_pool_add_worker(ctx->sendtp, sdk_ssvr_routine, ctx);
 
     return SDK_OK;
 }

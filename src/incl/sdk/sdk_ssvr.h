@@ -59,7 +59,6 @@ typedef struct
 /* SND线程上下文 */
 typedef struct
 {
-    int id;                             /* 对象ID */
     void *ctx;                          /* 存储sdk_t对象 */
     log_cycle_t *log;                   /* 日志对象 */
     sdk_queue_t *sendq;                 /* 发送缓存 */

@@ -59,8 +59,6 @@ typedef struct
 /* 处理数据请求的相关参数 */
 typedef struct
 {
-    uint32_t ori_svr_id;                /* 接收线程ID */
-    uint32_t rqidx;                     /* 接收队列索引 */
     uint32_t num;                       /* 需要处理的数据条数 */
 } sdk_cmd_proc_req_t;
 
