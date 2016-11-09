@@ -436,6 +436,7 @@ static int sdk_ssvr_recv_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 
                 CLOSE(sck->fd);
                 sdk_snap_reset(recv);
+                ssvr->is_online_succ = false;
                 return SDK_ERR;
             }
             continue;
@@ -443,6 +444,7 @@ static int sdk_ssvr_recv_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
         else if (0 == n) {
             log_info(ssvr->log, "Server disconnected. fd:%d n:%d/%d", sck->fd, n, left);
             CLOSE(sck->fd);
+            ssvr->is_online_succ = false;
             sdk_snap_reset(recv);
             return SDK_SCK_DISCONN;
         }
@@ -457,6 +459,7 @@ static int sdk_ssvr_recv_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 
         CLOSE(sck->fd);
         sdk_snap_reset(recv);
+        ssvr->is_online_succ = false;
         return SDK_ERR;
     }
 
@@ -611,12 +614,14 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
             CLOSE(sck->fd);
             wiov_clean(send);
             SDK_SET_SLEEP_SEC(ssvr, 0);
+            ssvr->is_online_succ = false;
             return SDK_OK;
         case SDK_CMD_NETWORK_DISCONN:
             log_debug(ssvr->log, "Network disconnect! type:[%d]", cmd->type);
             CLOSE(sck->fd);
             CLOSE(sck->fd);
             wiov_clean(send);
+            ssvr->is_online_succ = false;
             SDK_SET_SLEEP_SEC(ssvr, SDK_RECONN_INTV);
             return SDK_OK;
         default:

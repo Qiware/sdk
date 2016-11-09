@@ -379,7 +379,15 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
 {
     void *addr;
     mesg_header_t *head;
+    sdk_ssvr_t *ssvr = ctx->ssvr;
 
+    /* > 判断网络是否正常 */
+    if (!ssvr->is_online_succ) {
+        log_error(ctx->log, "Network is still disconnect!");
+        return SDK_ERR_NETWORK_DISCONN; /* 网络已断开 */
+    }
+
+    /* > 申请内存空间 */
     addr = (void *)calloc(1, sizeof(mesg_header_t)+size);
     if (NULL == addr) {
         log_error(ctx->log, "Alloc memory [%d] failed! errmsg:[%d] %s!",
