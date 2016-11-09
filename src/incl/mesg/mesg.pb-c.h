@@ -8,9 +8,9 @@
 PROTOBUF_C_BEGIN_DECLS
 
 
-typedef struct _Mesg__Online Mesg__Online;
-typedef struct _Mesg__Offline Mesg__Offline;
-typedef struct _Mesg__OnlineAck Mesg__OnlineAck;
+typedef struct _Online Online;
+typedef struct _Offline Offline;
+typedef struct _OnlineAck OnlineAck;
 
 
 /* --- enums --- */
@@ -18,7 +18,7 @@ typedef struct _Mesg__OnlineAck Mesg__OnlineAck;
 
 /* --- messages --- */
 
-struct  _Mesg__Online
+struct  _Online
 {
   ProtobufCMessage base;
   char *cid;
@@ -26,12 +26,12 @@ struct  _Mesg__Online
   char *version;
   char *appkey;
 };
-#define MESG__ONLINE__INIT \
- { PROTOBUF_C_MESSAGE_INIT (&mesg__online__descriptor) \
+#define ONLINE__INIT \
+ { PROTOBUF_C_MESSAGE_INIT (&online__descriptor) \
     , NULL, NULL, NULL, NULL }
 
 
-struct  _Mesg__Offline
+struct  _Offline
 {
   ProtobufCMessage base;
   protobuf_c_boolean has_code;
@@ -39,90 +39,90 @@ struct  _Mesg__Offline
   char *msg;
   char *appkey;
 };
-#define MESG__OFFLINE__INIT \
- { PROTOBUF_C_MESSAGE_INIT (&mesg__offline__descriptor) \
+#define OFFLINE__INIT \
+ { PROTOBUF_C_MESSAGE_INIT (&offline__descriptor) \
     , 0,0, NULL, NULL }
 
 
-struct  _Mesg__OnlineAck
+struct  _OnlineAck
 {
   ProtobufCMessage base;
   protobuf_c_boolean has_code;
   int32_t code;
   char *msg;
 };
-#define MESG__ONLINE_ACK__INIT \
- { PROTOBUF_C_MESSAGE_INIT (&mesg__online_ack__descriptor) \
+#define ONLINE_ACK__INIT \
+ { PROTOBUF_C_MESSAGE_INIT (&online_ack__descriptor) \
     , 0,0, NULL }
 
 
-/* Mesg__Online methods */
-void   mesg__online__init
-                     (Mesg__Online         *message);
-size_t mesg__online__get_packed_size
-                     (const Mesg__Online   *message);
-size_t mesg__online__pack
-                     (const Mesg__Online   *message,
+/* Online methods */
+void   online__init
+                     (Online         *message);
+size_t online__get_packed_size
+                     (const Online   *message);
+size_t online__pack
+                     (const Online   *message,
                       uint8_t             *out);
-size_t mesg__online__pack_to_buffer
-                     (const Mesg__Online   *message,
+size_t online__pack_to_buffer
+                     (const Online   *message,
                       ProtobufCBuffer     *buffer);
-Mesg__Online *
-       mesg__online__unpack
+Online *
+       online__unpack
                      (ProtobufCAllocator  *allocator,
                       size_t               len,
                       const uint8_t       *data);
-void   mesg__online__free_unpacked
-                     (Mesg__Online *message,
+void   online__free_unpacked
+                     (Online *message,
                       ProtobufCAllocator *allocator);
-/* Mesg__Offline methods */
-void   mesg__offline__init
-                     (Mesg__Offline         *message);
-size_t mesg__offline__get_packed_size
-                     (const Mesg__Offline   *message);
-size_t mesg__offline__pack
-                     (const Mesg__Offline   *message,
+/* Offline methods */
+void   offline__init
+                     (Offline         *message);
+size_t offline__get_packed_size
+                     (const Offline   *message);
+size_t offline__pack
+                     (const Offline   *message,
                       uint8_t             *out);
-size_t mesg__offline__pack_to_buffer
-                     (const Mesg__Offline   *message,
+size_t offline__pack_to_buffer
+                     (const Offline   *message,
                       ProtobufCBuffer     *buffer);
-Mesg__Offline *
-       mesg__offline__unpack
+Offline *
+       offline__unpack
                      (ProtobufCAllocator  *allocator,
                       size_t               len,
                       const uint8_t       *data);
-void   mesg__offline__free_unpacked
-                     (Mesg__Offline *message,
+void   offline__free_unpacked
+                     (Offline *message,
                       ProtobufCAllocator *allocator);
-/* Mesg__OnlineAck methods */
-void   mesg__online_ack__init
-                     (Mesg__OnlineAck         *message);
-size_t mesg__online_ack__get_packed_size
-                     (const Mesg__OnlineAck   *message);
-size_t mesg__online_ack__pack
-                     (const Mesg__OnlineAck   *message,
+/* OnlineAck methods */
+void   online_ack__init
+                     (OnlineAck         *message);
+size_t online_ack__get_packed_size
+                     (const OnlineAck   *message);
+size_t online_ack__pack
+                     (const OnlineAck   *message,
                       uint8_t             *out);
-size_t mesg__online_ack__pack_to_buffer
-                     (const Mesg__OnlineAck   *message,
+size_t online_ack__pack_to_buffer
+                     (const OnlineAck   *message,
                       ProtobufCBuffer     *buffer);
-Mesg__OnlineAck *
-       mesg__online_ack__unpack
+OnlineAck *
+       online_ack__unpack
                      (ProtobufCAllocator  *allocator,
                       size_t               len,
                       const uint8_t       *data);
-void   mesg__online_ack__free_unpacked
-                     (Mesg__OnlineAck *message,
+void   online_ack__free_unpacked
+                     (OnlineAck *message,
                       ProtobufCAllocator *allocator);
 /* --- per-message closures --- */
 
-typedef void (*Mesg__Online_Closure)
-                 (const Mesg__Online *message,
+typedef void (*Online_Closure)
+                 (const Online *message,
                   void *closure_data);
-typedef void (*Mesg__Offline_Closure)
-                 (const Mesg__Offline *message,
+typedef void (*Offline_Closure)
+                 (const Offline *message,
                   void *closure_data);
-typedef void (*Mesg__OnlineAck_Closure)
-                 (const Mesg__OnlineAck *message,
+typedef void (*OnlineAck_Closure)
+                 (const OnlineAck *message,
                   void *closure_data);
 
 /* --- services --- */
@@ -130,9 +130,9 @@ typedef void (*Mesg__OnlineAck_Closure)
 
 /* --- descriptors --- */
 
-extern const ProtobufCMessageDescriptor mesg__online__descriptor;
-extern const ProtobufCMessageDescriptor mesg__offline__descriptor;
-extern const ProtobufCMessageDescriptor mesg__online_ack__descriptor;
+extern const ProtobufCMessageDescriptor online__descriptor;
+extern const ProtobufCMessageDescriptor offline__descriptor;
+extern const ProtobufCMessageDescriptor online_ack__descriptor;
 
 PROTOBUF_C_END_DECLS
 

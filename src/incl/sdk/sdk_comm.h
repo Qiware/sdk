@@ -22,6 +22,7 @@ typedef enum
     , SDK_SCK_DISCONN                  /* 连接断开 */
 
     , SDK_ERR = ~0x7FFFFFFF            /* 失败 */
+    , SDK_ERR_NETWORK_DISCONN          /* 网络断开连接 */
     , SDK_ERR_CALLOC                   /* Calloc错误 */
     , SDK_ERR_QALLOC                   /* 申请Queue空间失败 */
     , SDK_ERR_QSIZE                    /* Queue的单元空间不足 */

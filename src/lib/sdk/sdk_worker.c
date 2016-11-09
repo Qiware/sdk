@@ -39,7 +39,6 @@ void *sdk_worker_routine(void *_ctx)
     sdk_cmd_proc_req_t *req;
     struct timeval timeout;
     sdk_cntx_t *ctx = (sdk_cntx_t *)_ctx;
-    sdk_conf_t *conf = (sdk_conf_t *)&ctx->conf;
 
     /* 1. 获取工作对象 */
     worker = sdk_worker_get_curr(ctx);
@@ -73,7 +72,7 @@ void *sdk_worker_routine(void *_ctx)
             sdk_cmd_t cmd;
             req = (sdk_cmd_proc_req_t *)&cmd.param;
 
-            for (idx=0; idx<conf->send_thd_num; ++idx) {
+            for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
                 memset(&cmd, 0, sizeof(cmd));
 
                 cmd.type = SDK_CMD_PROC_REQ;

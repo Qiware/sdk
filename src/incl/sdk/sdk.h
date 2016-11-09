@@ -8,6 +8,7 @@
 #define SDK_DEV_ID_LEN      (64)
 #define SDK_CLIENT_ID_LEN   (64)
 #define SDK_APP_KEY_LEN     (128)
+#define SDK_SSVR_NUM        (1)         /* 发送协程个数 */
 
 /* 配置信息 */
 typedef struct
@@ -26,7 +27,6 @@ typedef struct
 
     char httpsvr[IP_ADDR_MAX_LEN];      /* HTTP端(IP+端口/域名) */
 
-    int send_thd_num;                   /* 发送线程数 */
     int work_thd_num;                   /* 工作线程数 */
 
     size_t recv_buff_size;              /* 接收缓存大小 */
@@ -64,6 +64,7 @@ sdk_worker_t *sdk_worker_get_by_idx(sdk_cntx_t *ctx, int idx);
 
 int sdk_mesg_send_ping_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
+int sdk_mesg_send_sync_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
 
 int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
 int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);

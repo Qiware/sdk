@@ -6,136 +6,136 @@
 #endif
 
 #include "mesg.pb-c.h"
-void   mesg__online__init
-                     (Mesg__Online         *message)
+void   online__init
+                     (Online         *message)
 {
-  static Mesg__Online init_value = MESG__ONLINE__INIT;
+  static Online init_value = ONLINE__INIT;
   *message = init_value;
 }
-size_t mesg__online__get_packed_size
-                     (const Mesg__Online *message)
+size_t online__get_packed_size
+                     (const Online *message)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__online__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &online__descriptor);
   return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
 }
-size_t mesg__online__pack
-                     (const Mesg__Online *message,
+size_t online__pack
+                     (const Online *message,
                       uint8_t       *out)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__online__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &online__descriptor);
   return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
 }
-size_t mesg__online__pack_to_buffer
-                     (const Mesg__Online *message,
+size_t online__pack_to_buffer
+                     (const Online *message,
                       ProtobufCBuffer *buffer)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__online__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &online__descriptor);
   return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
 }
-Mesg__Online *
-       mesg__online__unpack
+Online *
+       online__unpack
                      (ProtobufCAllocator  *allocator,
                       size_t               len,
                       const uint8_t       *data)
 {
-  return (Mesg__Online *)
-     protobuf_c_message_unpack (&mesg__online__descriptor,
+  return (Online *)
+     protobuf_c_message_unpack (&online__descriptor,
                                 allocator, len, data);
 }
-void   mesg__online__free_unpacked
-                     (Mesg__Online *message,
+void   online__free_unpacked
+                     (Online *message,
                       ProtobufCAllocator *allocator)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__online__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &online__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-void   mesg__offline__init
-                     (Mesg__Offline         *message)
+void   offline__init
+                     (Offline         *message)
 {
-  static Mesg__Offline init_value = MESG__OFFLINE__INIT;
+  static Offline init_value = OFFLINE__INIT;
   *message = init_value;
 }
-size_t mesg__offline__get_packed_size
-                     (const Mesg__Offline *message)
+size_t offline__get_packed_size
+                     (const Offline *message)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__offline__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &offline__descriptor);
   return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
 }
-size_t mesg__offline__pack
-                     (const Mesg__Offline *message,
+size_t offline__pack
+                     (const Offline *message,
                       uint8_t       *out)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__offline__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &offline__descriptor);
   return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
 }
-size_t mesg__offline__pack_to_buffer
-                     (const Mesg__Offline *message,
+size_t offline__pack_to_buffer
+                     (const Offline *message,
                       ProtobufCBuffer *buffer)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__offline__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &offline__descriptor);
   return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
 }
-Mesg__Offline *
-       mesg__offline__unpack
+Offline *
+       offline__unpack
                      (ProtobufCAllocator  *allocator,
                       size_t               len,
                       const uint8_t       *data)
 {
-  return (Mesg__Offline *)
-     protobuf_c_message_unpack (&mesg__offline__descriptor,
+  return (Offline *)
+     protobuf_c_message_unpack (&offline__descriptor,
                                 allocator, len, data);
 }
-void   mesg__offline__free_unpacked
-                     (Mesg__Offline *message,
+void   offline__free_unpacked
+                     (Offline *message,
                       ProtobufCAllocator *allocator)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__offline__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &offline__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-void   mesg__online_ack__init
-                     (Mesg__OnlineAck         *message)
+void   online_ack__init
+                     (OnlineAck         *message)
 {
-  static Mesg__OnlineAck init_value = MESG__ONLINE_ACK__INIT;
+  static OnlineAck init_value = ONLINE_ACK__INIT;
   *message = init_value;
 }
-size_t mesg__online_ack__get_packed_size
-                     (const Mesg__OnlineAck *message)
+size_t online_ack__get_packed_size
+                     (const OnlineAck *message)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__online_ack__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &online_ack__descriptor);
   return protobuf_c_message_get_packed_size ((const ProtobufCMessage*)(message));
 }
-size_t mesg__online_ack__pack
-                     (const Mesg__OnlineAck *message,
+size_t online_ack__pack
+                     (const OnlineAck *message,
                       uint8_t       *out)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__online_ack__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &online_ack__descriptor);
   return protobuf_c_message_pack ((const ProtobufCMessage*)message, out);
 }
-size_t mesg__online_ack__pack_to_buffer
-                     (const Mesg__OnlineAck *message,
+size_t online_ack__pack_to_buffer
+                     (const OnlineAck *message,
                       ProtobufCBuffer *buffer)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__online_ack__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &online_ack__descriptor);
   return protobuf_c_message_pack_to_buffer ((const ProtobufCMessage*)message, buffer);
 }
-Mesg__OnlineAck *
-       mesg__online_ack__unpack
+OnlineAck *
+       online_ack__unpack
                      (ProtobufCAllocator  *allocator,
                       size_t               len,
                       const uint8_t       *data)
 {
-  return (Mesg__OnlineAck *)
-     protobuf_c_message_unpack (&mesg__online_ack__descriptor,
+  return (OnlineAck *)
+     protobuf_c_message_unpack (&online_ack__descriptor,
                                 allocator, len, data);
 }
-void   mesg__online_ack__free_unpacked
-                     (Mesg__OnlineAck *message,
+void   online_ack__free_unpacked
+                     (OnlineAck *message,
                       ProtobufCAllocator *allocator)
 {
-  PROTOBUF_C_ASSERT (message->base.descriptor == &mesg__online_ack__descriptor);
+  PROTOBUF_C_ASSERT (message->base.descriptor == &online_ack__descriptor);
   protobuf_c_message_free_unpacked ((ProtobufCMessage*)message, allocator);
 }
-static const ProtobufCFieldDescriptor mesg__online__field_descriptors[4] =
+static const ProtobufCFieldDescriptor online__field_descriptors[4] =
 {
   {
     "cid",
@@ -143,7 +143,7 @@ static const ProtobufCFieldDescriptor mesg__online__field_descriptors[4] =
     PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_STRING,
     0,   /* quantifier_offset */
-    PROTOBUF_C_OFFSETOF(Mesg__Online, cid),
+    PROTOBUF_C_OFFSETOF(Online, cid),
     NULL,
     NULL,
     0,            /* packed */
@@ -155,7 +155,7 @@ static const ProtobufCFieldDescriptor mesg__online__field_descriptors[4] =
     PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_STRING,
     0,   /* quantifier_offset */
-    PROTOBUF_C_OFFSETOF(Mesg__Online, token),
+    PROTOBUF_C_OFFSETOF(Online, token),
     NULL,
     NULL,
     0,            /* packed */
@@ -167,7 +167,7 @@ static const ProtobufCFieldDescriptor mesg__online__field_descriptors[4] =
     PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_STRING,
     0,   /* quantifier_offset */
-    PROTOBUF_C_OFFSETOF(Mesg__Online, version),
+    PROTOBUF_C_OFFSETOF(Online, version),
     NULL,
     NULL,
     0,            /* packed */
@@ -179,48 +179,48 @@ static const ProtobufCFieldDescriptor mesg__online__field_descriptors[4] =
     PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_STRING,
     0,   /* quantifier_offset */
-    PROTOBUF_C_OFFSETOF(Mesg__Online, appkey),
+    PROTOBUF_C_OFFSETOF(Online, appkey),
     NULL,
     NULL,
     0,            /* packed */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
-static const unsigned mesg__online__field_indices_by_name[] = {
+static const unsigned online__field_indices_by_name[] = {
   3,   /* field[3] = appkey */
   0,   /* field[0] = cid */
   1,   /* field[1] = token */
   2,   /* field[2] = version */
 };
-static const ProtobufCIntRange mesg__online__number_ranges[1 + 1] =
+static const ProtobufCIntRange online__number_ranges[1 + 1] =
 {
   { 1, 0 },
   { 0, 4 }
 };
-const ProtobufCMessageDescriptor mesg__online__descriptor =
+const ProtobufCMessageDescriptor online__descriptor =
 {
   PROTOBUF_C_MESSAGE_DESCRIPTOR_MAGIC,
-  "mesg.online",
+  "online",
   "Online",
-  "Mesg__Online",
-  "mesg",
-  sizeof(Mesg__Online),
+  "Online",
+  "",
+  sizeof(Online),
   4,
-  mesg__online__field_descriptors,
-  mesg__online__field_indices_by_name,
-  1,  mesg__online__number_ranges,
-  (ProtobufCMessageInit) mesg__online__init,
+  online__field_descriptors,
+  online__field_indices_by_name,
+  1,  online__number_ranges,
+  (ProtobufCMessageInit) online__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor mesg__offline__field_descriptors[3] =
+static const ProtobufCFieldDescriptor offline__field_descriptors[3] =
 {
   {
     "code",
     1,
     PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_INT32,
-    PROTOBUF_C_OFFSETOF(Mesg__Offline, has_code),
-    PROTOBUF_C_OFFSETOF(Mesg__Offline, code),
+    PROTOBUF_C_OFFSETOF(Offline, has_code),
+    PROTOBUF_C_OFFSETOF(Offline, code),
     NULL,
     NULL,
     0,            /* packed */
@@ -232,7 +232,7 @@ static const ProtobufCFieldDescriptor mesg__offline__field_descriptors[3] =
     PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_STRING,
     0,   /* quantifier_offset */
-    PROTOBUF_C_OFFSETOF(Mesg__Offline, msg),
+    PROTOBUF_C_OFFSETOF(Offline, msg),
     NULL,
     NULL,
     0,            /* packed */
@@ -244,47 +244,47 @@ static const ProtobufCFieldDescriptor mesg__offline__field_descriptors[3] =
     PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_STRING,
     0,   /* quantifier_offset */
-    PROTOBUF_C_OFFSETOF(Mesg__Offline, appkey),
+    PROTOBUF_C_OFFSETOF(Offline, appkey),
     NULL,
     NULL,
     0,            /* packed */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
-static const unsigned mesg__offline__field_indices_by_name[] = {
+static const unsigned offline__field_indices_by_name[] = {
   2,   /* field[2] = appkey */
   0,   /* field[0] = code */
   1,   /* field[1] = msg */
 };
-static const ProtobufCIntRange mesg__offline__number_ranges[1 + 1] =
+static const ProtobufCIntRange offline__number_ranges[1 + 1] =
 {
   { 1, 0 },
   { 0, 3 }
 };
-const ProtobufCMessageDescriptor mesg__offline__descriptor =
+const ProtobufCMessageDescriptor offline__descriptor =
 {
   PROTOBUF_C_MESSAGE_DESCRIPTOR_MAGIC,
-  "mesg.offline",
+  "offline",
   "Offline",
-  "Mesg__Offline",
-  "mesg",
-  sizeof(Mesg__Offline),
+  "Offline",
+  "",
+  sizeof(Offline),
   3,
-  mesg__offline__field_descriptors,
-  mesg__offline__field_indices_by_name,
-  1,  mesg__offline__number_ranges,
-  (ProtobufCMessageInit) mesg__offline__init,
+  offline__field_descriptors,
+  offline__field_indices_by_name,
+  1,  offline__number_ranges,
+  (ProtobufCMessageInit) offline__init,
   NULL,NULL,NULL    /* reserved[123] */
 };
-static const ProtobufCFieldDescriptor mesg__online_ack__field_descriptors[2] =
+static const ProtobufCFieldDescriptor online_ack__field_descriptors[2] =
 {
   {
     "code",
     1,
     PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_INT32,
-    PROTOBUF_C_OFFSETOF(Mesg__OnlineAck, has_code),
-    PROTOBUF_C_OFFSETOF(Mesg__OnlineAck, code),
+    PROTOBUF_C_OFFSETOF(OnlineAck, has_code),
+    PROTOBUF_C_OFFSETOF(OnlineAck, code),
     NULL,
     NULL,
     0,            /* packed */
@@ -296,34 +296,34 @@ static const ProtobufCFieldDescriptor mesg__online_ack__field_descriptors[2] =
     PROTOBUF_C_LABEL_OPTIONAL,
     PROTOBUF_C_TYPE_STRING,
     0,   /* quantifier_offset */
-    PROTOBUF_C_OFFSETOF(Mesg__OnlineAck, msg),
+    PROTOBUF_C_OFFSETOF(OnlineAck, msg),
     NULL,
     NULL,
     0,            /* packed */
     0,NULL,NULL    /* reserved1,reserved2, etc */
   },
 };
-static const unsigned mesg__online_ack__field_indices_by_name[] = {
+static const unsigned online_ack__field_indices_by_name[] = {
   0,   /* field[0] = code */
   1,   /* field[1] = msg */
 };
-static const ProtobufCIntRange mesg__online_ack__number_ranges[1 + 1] =
+static const ProtobufCIntRange online_ack__number_ranges[1 + 1] =
 {
   { 1, 0 },
   { 0, 2 }
 };
-const ProtobufCMessageDescriptor mesg__online_ack__descriptor =
+const ProtobufCMessageDescriptor online_ack__descriptor =
 {
   PROTOBUF_C_MESSAGE_DESCRIPTOR_MAGIC,
-  "mesg.online_ack",
+  "online_ack",
   "OnlineAck",
-  "Mesg__OnlineAck",
-  "mesg",
-  sizeof(Mesg__OnlineAck),
+  "OnlineAck",
+  "",
+  sizeof(OnlineAck),
   2,
-  mesg__online_ack__field_descriptors,
-  mesg__online_ack__field_indices_by_name,
-  1,  mesg__online_ack__number_ranges,
-  (ProtobufCMessageInit) mesg__online_ack__init,
+  online_ack__field_descriptors,
+  online_ack__field_indices_by_name,
+  1,  online_ack__number_ranges,
+  (ProtobufCMessageInit) online_ack__init,
   NULL,NULL,NULL    /* reserved[123] */
 };

@@ -1,5 +1,3 @@
-package mesg;
-
 message online {
     optional string cid = 1;                // 平台分配的客户端clientid
     optional string token = 2;              // 登录token

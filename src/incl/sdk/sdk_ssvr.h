@@ -66,6 +66,7 @@ typedef struct
     fd_set rset;                        /* 读集合 */
     fd_set wset;                        /* 写集合 */
 
+    bool is_online_succ;                /* 上线是否成功 */
     sdk_conn_info_t conn_info;          /* CONN INFO信息 */
 
     /* 统计信息 */

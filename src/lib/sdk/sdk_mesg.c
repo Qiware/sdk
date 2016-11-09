@@ -67,55 +67,10 @@ int sdk_mesg_send_ping_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
         return SDK_ERR;
     }
 
-    log_debug(ssvr->log, "Add keepalive request success! fd:[%d]", sck->fd);
+    log_debug(ssvr->log, "Add ping request success!");
 
     ++sck->kpalive_times;
     sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SENT);
-    return SDK_OK;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-/******************************************************************************
- **函数名称: sdk_mesg_pong_handler
- **功    能: 处理PONG命令
- **输入参数:
- **     ctx: 全局信息
- **     ssvr: Snd线程对象
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项:
- **作    者: # Qifeng.zou # 2016.11.08 20:42:56 #
- ******************************************************************************/
-int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
-{
-    sck->kpalive_times = 0;
-    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SUCC);
-    return SDK_OK;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
-/******************************************************************************
- **函数名称: sdk_mesg_ping_handler
- **功    能: 处理PING命令
- **输入参数:
- **     ctx: 全局信息
- **     ssvr: Snd线程对象
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项:
- **作    者: # Qifeng.zou # 2016.11.08 20:42:56 #
- ******************************************************************************/
-int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
-{
-    sck->kpalive_times = 0;
-    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SUCC);
-    sdk_mesg_send_ping_req(ctx, ssvr);
     return SDK_OK;
 }
 
@@ -142,7 +97,7 @@ int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     sdk_sct_t *sck = &ssvr->sck;
     sdk_conf_t *conf = &ctx->conf;
     sdk_conn_info_t *info = &ssvr->conn_info;
-    Mesg__Online online = MESG__ONLINE__INIT;
+    Online online = ONLINE__INIT;
 
     /* > 设置ONLINE字段 */
     online.cid = conf->clientid;
@@ -151,7 +106,7 @@ int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     online.token = info->token;
 
     /* > 申请内存空间 */
-    size = sizeof(mesg_header_t) + mesg__online__get_packed_size(&online);
+    size = sizeof(mesg_header_t) + online__get_packed_size(&online);
 
     addr = (void *)calloc(1, size);
     if (NULL == addr) {
@@ -167,7 +122,7 @@ int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     head->flag = 0;
     head->from = info->sessionid;
 
-    mesg__online__pack(&online, addr+sizeof(mesg_header_t));
+    online__pack(&online, addr+sizeof(mesg_header_t));
 
     /* 3. 加入发送列表 */
     if (list_rpush(sck->mesg_list, addr)) {
@@ -176,8 +131,112 @@ int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
         return SDK_ERR;
     }
 
-    log_debug(ssvr->log, "Add online request success! fd:[%d]", sck->fd);
+    ssvr->is_online_succ = false;
 
+    log_debug(ssvr->log, "Add online request success!");
+
+    return SDK_OK;
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+/******************************************************************************
+ **函数名称: sdk_mesg_send_sync_req
+ **功    能: 发送SYNC命令
+ **输入参数:
+ **     ctx: 全局信息
+ **     ssvr: 读写线程对象
+ **     sck: 通信套接字
+ **     addr: 读取的数据
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.09 09:54:53 #
+ ******************************************************************************/
+int sdk_mesg_send_sync_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
+{
+    void *addr;
+    size_t size;
+    mesg_header_t *head;
+    sdk_conn_info_t *info = &ssvr->conn_info;
+
+    /* > 申请内存空间 */
+    size = sizeof(mesg_header_t);
+
+    addr = (void *)calloc(1, size);
+    if (NULL == addr) {
+        log_error(ssvr->log, "Alloc memory failed! errmsg:[%d] %s!", errno, strerror(errno));
+        return SDK_ERR;
+    }
+
+    /* 2. 设置SYNC数据 */
+    head = (mesg_header_t *)addr;
+
+    head->cmd = CMD_SYNC;
+    head->len = 0;
+    head->flag = 0;
+    head->from = info->sessionid;
+
+    /* 3. 加入发送列表 */
+    if (list_rpush(sck->mesg_list, addr)) {
+        free(addr);
+        log_error(ssvr->log, "Insert list failed!");
+        return SDK_ERR;
+    }
+
+    log_debug(ssvr->log, "Add sync request success!");
+
+    return SDK_OK;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+/******************************************************************************
+ **函数名称: sdk_mesg_pong_handler
+ **功    能: 处理PONG命令
+ **输入参数:
+ **     ctx: 全局信息
+ **     ssvr: Snd线程对象
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.08 20:42:56 #
+ ******************************************************************************/
+int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
+{
+    log_debug(ssvr->log, "Recv pong!");
+
+    sck->kpalive_times = 0;
+    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SUCC);
+    return SDK_OK;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+/******************************************************************************
+ **函数名称: sdk_mesg_ping_handler
+ **功    能: 处理PING命令
+ **输入参数:
+ **     ctx: 全局信息
+ **     ssvr: Snd线程对象
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项: 收到服务端主动下发的PING, 客户端无需应答PONG, 而是直接发送PING请求.
+ **作    者: # Qifeng.zou # 2016.11.08 20:42:56 #
+ ******************************************************************************/
+int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
+{
+    sck->kpalive_times = 0;
+    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SUCC);
+    sdk_mesg_send_ping_req(ctx, ssvr);
     return SDK_OK;
 }
 
@@ -200,5 +259,18 @@ int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
  ******************************************************************************/
 int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr)
 {
+    OnlineAck *ack;
+    mesg_header_t *head = (mesg_header_t *)addr;
+
+    ack = online_ack__unpack(NULL, head->len, (void *)(head + 1));
+    if (ack->has_code && (0 == ack->code)) {
+        ssvr->is_online_succ = true;
+    }
+    else {
+        ssvr->is_online_succ = false;
+    }
+
+    log_debug(ctx->log, "code:%d msg:%s", ack->code, ack->msg);
+
     return SDK_OK;
 }

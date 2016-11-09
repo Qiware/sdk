@@ -65,17 +65,16 @@ static int sdk_creat_sends(sdk_cntx_t *ctx)
 {
     int idx;
     sdk_ssvr_t *ssvr;
-    sdk_conf_t *conf = &ctx->conf;
 
     /* > 创建对象 */
-    ssvr = (sdk_ssvr_t *)calloc(conf->send_thd_num, sizeof(sdk_ssvr_t));
+    ssvr = (sdk_ssvr_t *)calloc(SDK_SSVR_NUM, sizeof(sdk_ssvr_t));
     if (NULL == ssvr) {
         log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
         return SDK_ERR;
     }
 
     /* > 创建线程池 */
-    ctx->sendtp = thread_pool_init(conf->send_thd_num, NULL, (void *)ssvr);
+    ctx->sendtp = thread_pool_init(SDK_SSVR_NUM, NULL, (void *)ssvr);
     if (NULL == ctx->sendtp) {
         log_error(ctx->log, "Initialize thread pool failed!");
         free(ssvr);
@@ -83,7 +82,7 @@ static int sdk_creat_sends(sdk_cntx_t *ctx)
     }
 
     /* > 初始化线程 */
-    for (idx=0; idx<conf->send_thd_num; ++idx) {
+    for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
         if (sdk_ssvr_init(ctx, ssvr+idx, idx)) {
             log_fatal(ctx->log, "Initialize send thread failed!");
             free(ssvr);
@@ -112,7 +111,7 @@ static int sdk_creat_recvq(sdk_cntx_t *ctx)
     sdk_conf_t *conf = &ctx->conf;
 
     /* > 创建队列对象 */
-    ctx->recvq = (queue_t **)calloc(conf->send_thd_num, sizeof(queue_t *));
+    ctx->recvq = (queue_t **)calloc(SDK_SSVR_NUM, sizeof(queue_t *));
     if (NULL == ctx->recvq) {
         log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
         return SDK_ERR;
@@ -147,14 +146,14 @@ static int sdk_creat_sendq(sdk_cntx_t *ctx)
     sdk_conf_t *conf = &ctx->conf;
 
     /* > 创建队列对象 */
-    ctx->sendq = (queue_t **)calloc(conf->send_thd_num, sizeof(queue_t *));
+    ctx->sendq = (queue_t **)calloc(SDK_SSVR_NUM, sizeof(queue_t *));
     if (NULL == ctx->sendq) {
         log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
         return SDK_ERR;
     }
 
     /* > 创建发送队列 */
-    for (idx=0; idx<conf->send_thd_num; ++idx) {
+    for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
         ctx->sendq[idx] = queue_creat(conf->sendq.max, conf->sendq.size);
         if (NULL == ctx->sendq[idx]) {
             log_error(ctx->log, "Create send queue failed!");
@@ -274,7 +273,7 @@ int sdk_launch(sdk_cntx_t *ctx)
     }
 
     /* > 注册Send线程回调 */
-    for (idx=0; idx<conf->send_thd_num; ++idx) {
+    for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
         thread_pool_add_worker(ctx->sendtp, sdk_ssvr_routine, ctx);
     }
 
@@ -448,6 +447,7 @@ static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx, int idx)
  **注意事项:
  **     1. 只能用于发送自定义数据类型, 而不能用于系统数据类型
  **     2. 不用关注变量num在多线程中的值, 因其不影响安全性
+ **     3. 只要SSVR未处于未上线成功的状态, 则认为联网失败.
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
 int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to, const void *data, size_t size)
@@ -456,10 +456,9 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to, const void *data, size
     void *addr;
     mesg_header_t *head;
     static uint8_t num = 0; // 无需加锁
-    sdk_conf_t *conf = &ctx->conf;
 
     /* > 选择发送队列 */
-    idx = (num++) % conf->send_thd_num;
+    idx = (num++) % SDK_SSVR_NUM;
 
     addr = queue_malloc(ctx->sendq[idx], sizeof(mesg_header_t)+size);
     if (NULL == addr) {
@@ -509,8 +508,8 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to, const void *data, size
  ******************************************************************************/
 int sdk_network_switch(sdk_cntx_t *ctx, int status)
 {
-    int idx = 0;
     sdk_cmd_t cmd;
+    int ret, idx = 0;
     char path[FILE_NAME_MAX_LEN];
     sdk_conf_t *conf = &ctx->conf;
 
@@ -524,15 +523,14 @@ int sdk_network_switch(sdk_cntx_t *ctx, int status)
         return SDK_OK;
     }
 
-    if (unix_udp_send(ctx->cmd_sck_id, path, &cmd, sizeof(cmd)) < 0) {
-        spin_unlock(&ctx->cmd_sck_lck);
+    ret = unix_udp_send(ctx->cmd_sck_id, path, &cmd, sizeof(cmd));
+    spin_unlock(&ctx->cmd_sck_lck);
+    if (ret < 0) {
         if (EAGAIN != errno) {
             log_debug(ctx->log, "errmsg:[%d] %s! path:%s", errno, strerror(errno), path);
         }
         return SDK_ERR;
     }
-
-    spin_unlock(&ctx->cmd_sck_lck);
 
     return SDK_OK;
 

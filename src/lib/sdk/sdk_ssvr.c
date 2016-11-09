@@ -804,7 +804,10 @@ static int sdk_sys_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
         case CMD_PING:      /* 保活请求 */
             return sdk_mesg_ping_handler(ctx, ssvr, sck);
         case CMD_ONLINE_ACK:
-            return sdk_mesg_online_ack_handler(ctx, ssvr, sck, addr);
+            if (!sdk_mesg_online_ack_handler(ctx, ssvr, sck, addr)) {
+                return sdk_mesg_send_sync_req(ctx, ssvr, sck);
+            }
+            return SDK_ERR;
     }
 
     log_error(ssvr->log, "Unknown type [%d]!", head->cmd);
@@ -918,7 +921,7 @@ static int sdk_ssvr_cmd_proc_all_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     int idx;
 
-    for (idx=0; idx<ctx->conf.send_thd_num; ++idx) {
+    for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
         sdk_ssvr_cmd_proc_req(ctx, ssvr, idx);
     }
 
