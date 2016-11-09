@@ -650,7 +650,9 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
 static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
 {
     size_t len;
+    void *addr;
     mesg_header_t *head;
+    sdk_send_item_t *item;
     wiov_t *send = &sck->send;
 
     /* > 从消息链表取数据 */
@@ -677,16 +679,27 @@ static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
         }
 
         /* > 弹出发送数据 */
-        head = sdk_queue_lpop(ssvr->sendq);
-        if (NULL == head) {
+        item = sdk_queue_lpop(ssvr->sendq);
+        if (NULL == item) {
             break;
         }
+        else if (time(NULL) >= item->ttl) { /* 已经超时 */
+            head = (mesg_header_t *)item->data;
+            addr = (void *)(head + 1);
+            item->cb(addr, head->len, SDK_SEND_TIMEOUT, item->param);
+            FREE(item->data);
+            FREE(item);
+            continue;
+        }
+
+        head = (mesg_header_t *)item->data;
 
         len = sizeof(mesg_header_t) + head->len;
 
         SDK_HEAD_HTON(head, head);
 
         wiov_item_add(send, head, len, NULL, mem_dealloc);
+        FREE(item);
     }
 
     return 0;

@@ -353,6 +353,7 @@ static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx)
  **     size: 数据长度
  **     timeout: 超时时间
  **     cb: 该包发送结果回调(成功/失败/超时)
+ **     param: 回调附加参数
  **输出参数: NONE
  **返    回: 0:成功 !0:失败
  **实现描述: 将数据按照约定格式放入队列中
@@ -375,10 +376,11 @@ static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx)
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
 int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
-        const void *data, size_t size, int timeout, sdk_send_cb_t cb)
+        const void *data, size_t size, int timeout, sdk_send_cb_t cb, void *param)
 {
     void *addr;
     mesg_header_t *head;
+    sdk_send_item_t *item;
     sdk_ssvr_t *ssvr = ctx->ssvr;
 
     /* > 判断网络是否正常 */
@@ -403,16 +405,32 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
     head->len = size;
     head->from = ctx->sid;
     head->to = to;
+    head->seq = ++ctx->sequence;
 
     memcpy(head+1, data, size);
 
     log_debug(ctx->log, "Head type:%d sid:%d length:%d flag:%d!",
           head->cmd, head->from, head->len, head->flag);
 
+    /* > 设置发送单元 */
+    item = (sdk_send_item_t *)calloc(1, sizeof(sdk_send_item_t));
+    if (NULL == item) {
+        log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
+        FREE(head);
+        return SDK_ERR;
+    }
+
+    item->cmd = cmd;
+    item->ttl = time(NULL) + timeout;
+    item->cb = cb;
+    item->data = (void *)addr;
+    item->param = param;
+
     /* > 放入发送队列 */
-    if (sdk_queue_rpush(&ctx->sendq, addr)) {
+    if (sdk_queue_rpush(&ctx->sendq, (void *)item)) {
         log_error(ctx->log, "Push into shmq failed!");
-        free(addr);
+        FREE(addr);
+        FREE(item);
         return SDK_ERR;
     }
 

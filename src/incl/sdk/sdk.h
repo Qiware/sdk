@@ -9,12 +9,28 @@
 #define SDK_CLIENT_ID_LEN   (64)        /* 客户端ID长度 */
 #define SDK_APP_KEY_LEN     (128)       /* 应用KEY长度 */
 
+typedef enum
+{
+    SDK_SEND_OK                         /* 发送成功 */
+    , SDK_SEND_FAIL                     /* 发送失败 */
+    , SDK_SEND_TIMEOUT                  /* 发送超时 */
+} sdk_callback_reason_e;
+
+/* 发送结果回调
+ *  data: 被发送的数据
+ *  len: 数据长度
+ *  reason: 回调原因(0:发送成功 -1:发送失败 -2:超时未发送 -3:发送后超时未应答)
+ * 作用: 发送成功还是失败都会调用此回调 */
+typedef int (*sdk_send_cb_t)(void *data, size_t size, sdk_callback_reason_e reason, void *param);
+
 /* 发送单元 */
 typedef struct
 {
     int cmd;                            /* 命令类型 */
     time_t ttl;                         /* 超时时间 */
-    void *data;                         /* 发送的数据 */
+    void *data;                         /* 发送数据 */
+    sdk_send_cb_t cb;                   /* 发送回调 */
+    void *param;                        /* 回调参数 */
 } sdk_send_item_t;
 
 /* 配置信息 */
@@ -48,7 +64,6 @@ typedef struct
 typedef struct
 {
     uint64_t sid;                       /* 会话SID */
-    uint64_t data_seq;                  /* 发送数据的序列号 */
     sdk_conf_t conf;                    /* 配置信息 */
     log_cycle_t *log;                   /* 日志对象 */
 
@@ -63,6 +78,8 @@ typedef struct
 
     sdk_queue_t recvq;                  /* 接收队列 */
     sdk_queue_t sendq;                  /* 发送队列 */
+
+    uint64_t sequence;                  /* 发送序列(从1开始递增) */
 } sdk_cntx_t;
 
 /* 内部接口 */
@@ -88,18 +105,11 @@ int sdk_queue_rpush(sdk_queue_t *q, void *addr);
 void *sdk_queue_lpop(sdk_queue_t *q);
 bool sdk_queue_empty(sdk_queue_t *q);
 
-/* 发送结果回调
- *  data: 被发送的数据
- *  len: 数据长度
- *  reason: 回调原因(0:发送成功 -1:发送失败 -2:超时未发送 -3:发送后超时未应答)
- * 作用: 发送成功还是失败都会调用此回调 */
-typedef int (*sdk_send_cb_t)(void *data, size_t size, int reason);
-
 /* 对外接口 */
 sdk_cntx_t *sdk_init(const sdk_conf_t *conf);
 int sdk_launch(sdk_cntx_t *ctx);
 int sdk_register(sdk_cntx_t *ctx, int cmd, sdk_reg_cb_t proc, void *args);
-int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to, const void *data, size_t size, int timeout, sdk_send_cb_t cb);
+int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to, const void *data, size_t size, int timeout, sdk_send_cb_t cb, void *param);
 int sdk_network_switch(sdk_cntx_t *ctx, int status);
 
 #endif /*__SDK_PROXY_H__*/
