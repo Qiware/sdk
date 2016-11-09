@@ -25,6 +25,7 @@ LIBS += -lpthread -lm -lcurl -lprotobuf-c
 LIBS += $(SHARED_LIB)
 
 SRC_LIST = ./sdk.c \
+		   ./sdk_comm.c \
 		   ./sdk_ssvr.c \
 		   ./sdk_mesg.c \
 		   ./sdk_worker.c \

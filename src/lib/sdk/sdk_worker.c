@@ -221,17 +221,12 @@ static int sdk_worker_event_core_hdl(sdk_cntx_t *ctx, sdk_worker_t *worker)
  ******************************************************************************/
 static int sdk_worker_cmd_proc_req_hdl(sdk_cntx_t *ctx, sdk_worker_t *worker, const sdk_cmd_t *cmd)
 {
-    list_t *rq;
     sdk_reg_t *reg, key;
     mesg_header_t *head;
-    const sdk_cmd_proc_req_t *work_cmd = (const sdk_cmd_proc_req_t *)&cmd->param;
-
-    /* 1. 获取接收队列 */
-    rq = ctx->recvq[work_cmd->rqidx];
 
     while (1) {
         /* > 从接收队列获取数据 */
-        head = list_lpop(rq);
+        head = sdk_queue_lpop(&ctx->recvq);
         if (NULL == head) {
             break;
         }

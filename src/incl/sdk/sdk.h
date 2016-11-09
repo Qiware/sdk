@@ -58,8 +58,9 @@ typedef struct
     thread_pool_t *worktp;              /* 工作线程池 */
 
     avl_tree_t *reg;                    /* 回调注册对象(注: 存储sdk_reg_t数据) */
-    list_t **recvq;                     /* 接收队列(数组长度与send_thd_num一致) */
-    list_t **sendq;                     /* 发送缓存(数组长度与send_thd_num一致) */
+
+    sdk_queue_t recvq;                  /* 接收队列 */
+    sdk_queue_t sendq;                  /* 发送队列 */
 } sdk_cntx_t;
 
 /* 内部接口 */
@@ -78,6 +79,12 @@ int sdk_mesg_send_sync_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
 int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
 int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
 int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr);
+
+int sdk_queue_init(sdk_queue_t *q);
+int sdk_queue_length(sdk_queue_t *q);
+int sdk_queue_rpush(sdk_queue_t *q, void *addr);
+void *sdk_queue_lpop(sdk_queue_t *q);
+bool sdk_queue_empty(sdk_queue_t *q);
 
 /* 发送结果回调
  *  data: 被发送的数据

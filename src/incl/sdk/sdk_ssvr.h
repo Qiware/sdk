@@ -11,14 +11,20 @@
 #define sdk_comm_usck_path(conf, _path) \
     snprintf(_path, sizeof(_path), "%s/.sdk/%d_comm.usck", (conf)->path, (conf)->nid)
 /* SSVR线程的UNIX-UDP路径 */
-#define sdk_ssvr_usck_path(conf, _path, id) \
-    snprintf(_path, sizeof(_path), "%s/.sdk/%d_ssvr_%d.usck", (conf)->path, (conf)->nid, id+1)
+#define sdk_ssvr_usck_path(conf, _path) \
+    snprintf(_path, sizeof(_path), "%s/.sdk/%d_ssvr.usck", (conf)->path, (conf)->nid)
 /* WORKER线程的UNIX-UDP路径 */
 #define sdk_worker_usck_path(conf, _path, id) \
     snprintf(_path, sizeof(_path), "%s/.sdk/%d_swrk_%d.usck", (conf)->path, (conf)->nid, id+1)
 /* 加锁路径 */
 #define sdk_lock_path(conf, _path) \
     snprintf(_path, sizeof(_path), "%s/.sdk/%d.lock", (conf)->path, (conf)->nid)
+
+typedef struct
+{
+    pthread_mutex_t lock;               /* 互斥锁 */
+    list_t *list;                       /* 队列 */
+} sdk_queue_t;
 
 /* 套接字信息 */
 typedef struct
@@ -56,7 +62,7 @@ typedef struct
     int id;                             /* 对象ID */
     void *ctx;                          /* 存储sdk_t对象 */
     log_cycle_t *log;                   /* 日志对象 */
-    list_t *sendq;                      /* 发送缓存 */
+    sdk_queue_t *sendq;                 /* 发送缓存 */
 
     int sleep_sec;                      /* 睡眠秒 */
     int cmd_sck_id;                     /* 命令通信套接字ID */

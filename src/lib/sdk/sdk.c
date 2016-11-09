@@ -95,75 +95,6 @@ static int sdk_creat_sends(sdk_cntx_t *ctx)
 }
 
 /******************************************************************************
- **函数名称: sdk_creat_recvq
- **功    能: 创建接收队列
- **输入参数:
- **     ctx: 全局对象
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项:
- **作    者: # Qifeng.zou # 2015.06.04 #
- ******************************************************************************/
-static int sdk_creat_recvq(sdk_cntx_t *ctx)
-{
-    int idx;
-    sdk_conf_t *conf = &ctx->conf;
-
-    /* > 创建队列对象 */
-    ctx->recvq = (list_t **)calloc(SDK_SSVR_NUM, sizeof(list_t *));
-    if (NULL == ctx->recvq) {
-        log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
-        return SDK_ERR;
-    }
-
-    /* > 创建接收队列 */
-    for (idx=0; idx<conf->work_thd_num; ++idx) {
-        ctx->recvq[idx] = list_creat(NULL);
-        if (NULL == ctx->recvq[idx]) {
-            log_error(ctx->log, "Create recvq failed!");
-            return SDK_ERR;
-        }
-    }
-
-    return SDK_OK;
-}
-
-/******************************************************************************
- **函数名称: sdk_creat_sendq
- **功    能: 创建发送线程的发送队列
- **输入参数:
- **     ctx: 发送对象
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项:
- **作    者: # Qifeng.zou # 2016.01.01 22:32:21 #
- ******************************************************************************/
-static int sdk_creat_sendq(sdk_cntx_t *ctx)
-{
-    int idx;
-
-    /* > 创建队列对象 */
-    ctx->sendq = (list_t **)calloc(SDK_SSVR_NUM, sizeof(list_t *));
-    if (NULL == ctx->sendq) {
-        log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
-        return SDK_ERR;
-    }
-
-    /* > 创建发送队列 */
-    for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
-        ctx->sendq[idx] = list_creat(NULL);
-        if (NULL == ctx->sendq[idx]) {
-            log_error(ctx->log, "Create send queue failed!");
-            return SDK_ERR;
-        }
-    }
-
-    return SDK_OK;
-}
-
-/******************************************************************************
  **函数名称: sdk_init
  **功    能: 初始化发送端
  **输入参数:
@@ -218,13 +149,13 @@ sdk_cntx_t *sdk_init(const sdk_conf_t *conf)
         }
 
         /* > 创建接收队列 */
-        if (sdk_creat_recvq(ctx)) {
+        if (sdk_queue_init(&ctx->recvq)) {
             log_fatal(log, "Create recv-queue failed!");
             break;
         }
 
         /* > 创建发送队列 */
-        if (sdk_creat_sendq(ctx)) {
+        if (sdk_queue_init(&ctx->sendq)) {
             log_fatal(log, "Create send queue failed!");
             break;
         }
@@ -383,14 +314,13 @@ static int sdk_lock_server(const sdk_conf_t *conf)
  **功    能: 通知Send服务线程
  **输入参数:
  **     ctx: 上下文信息
- **     idx: 发送服务ID
  **输出参数: NONE
  **返    回: 0:成功 !0:失败
  **实现描述:
  **注意事项:
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
-static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx, int idx)
+static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx)
 {
     sdk_cmd_t cmd;
     char path[FILE_NAME_MAX_LEN];
@@ -399,7 +329,7 @@ static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx, int idx)
     memset(&cmd, 0, sizeof(cmd));
 
     cmd.type = SDK_CMD_SEND_ALL;
-    sdk_ssvr_usck_path(conf, path, idx);
+    sdk_ssvr_usck_path(conf, path);
 
     if (spin_trylock(&ctx->cmd_sck_lck)) {
         log_debug(ctx->log, "Try lock failed!");
@@ -454,13 +384,8 @@ static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx, int idx)
 int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
         const void *data, size_t size, int timeout, sdk_send_cb_t cb)
 {
-    int idx;
     void *addr;
     mesg_header_t *head;
-    static uint8_t num = 0; // 无需加锁
-
-    /* > 选择发送队列 */
-    idx = (num++) % SDK_SSVR_NUM;
 
     addr = (void *)calloc(1, sizeof(mesg_header_t)+size);
     if (NULL == addr) {
@@ -480,18 +405,18 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
 
     memcpy(head+1, data, size);
 
-    log_debug(ctx->log, "idx:%d Head type:%d sid:%d length:%d flag:%d!",
-          idx, head->cmd, head->from, head->len, head->flag);
+    log_debug(ctx->log, "Head type:%d sid:%d length:%d flag:%d!",
+          head->cmd, head->from, head->len, head->flag);
 
     /* > 放入发送队列 */
-    if (list_rpush(ctx->sendq[idx], addr)) {
+    if (sdk_queue_rpush(&ctx->sendq, addr)) {
         log_error(ctx->log, "Push into shmq failed!");
         free(addr);
         return SDK_ERR;
     }
 
     /* > 通知发送线程 */
-    sdk_cli_cmd_send_req(ctx, idx);
+    sdk_cli_cmd_send_req(ctx);
 
     return SDK_OK;
 }
@@ -510,15 +435,15 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
  ******************************************************************************/
 int sdk_network_switch(sdk_cntx_t *ctx, int status)
 {
+    int ret;
     sdk_cmd_t cmd;
-    int ret, idx = 0;
     char path[FILE_NAME_MAX_LEN];
     sdk_conf_t *conf = &ctx->conf;
 
     memset(&cmd, 0, sizeof(cmd));
 
     cmd.type = status? SDK_CMD_NETWORK_CONN : SDK_CMD_NETWORK_DISCONN;
-    sdk_ssvr_usck_path(conf, path, idx);
+    sdk_ssvr_usck_path(conf, path);
 
     if (spin_trylock(&ctx->cmd_sck_lck)) {
         log_debug(ctx->log, "Try lock failed!");

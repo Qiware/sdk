@@ -17,7 +17,6 @@
 /* 静态函数 */
 static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx);
 
-static int sdk_ssvr_creat_sendq(sdk_ssvr_t *ssvr, const sdk_conf_t *conf);
 static int sdk_ssvr_creat_usck(sdk_ssvr_t *ssvr, const sdk_conf_t *conf);
 
 static int sdk_ssvr_recv_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
@@ -66,7 +65,7 @@ int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int idx)
     SDK_SET_SLEEP_SEC(ssvr, 1);
 
     /* > 创建发送队列 */
-    ssvr->sendq = ctx->sendq[idx];
+    ssvr->sendq = &ctx->sendq;
 
     /* > 连接信息 */
     memset(info, 0, sizeof(sdk_conn_info_t));
@@ -124,7 +123,7 @@ static int sdk_ssvr_creat_usck(sdk_ssvr_t *ssvr, const sdk_conf_t *conf)
 {
     char path[FILE_PATH_MAX_LEN];
 
-    sdk_ssvr_usck_path(conf, path, ssvr->id);
+    sdk_ssvr_usck_path(conf, path);
 
     ssvr->cmd_sck_id = unix_udp_creat(path);
     if (ssvr->cmd_sck_id < 0) {
@@ -164,7 +163,7 @@ void sdk_ssvr_set_rwset(sdk_ssvr_t *ssvr)
 
         /* 2 设置写集合: 发送至接收端 */
         if (!list_empty(ssvr->sck.mesg_list)
-            || !list_empty(ssvr->sendq)) {
+            || !sdk_queue_empty(ssvr->sendq)) {
             FD_SET(ssvr->sck.fd, &ssvr->wset);
             return;
         }
@@ -644,7 +643,7 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
  **                享变量的值可能被其他进程或线程修改, 导致出现严重错误!
  **作    者: # Qifeng.zou # 2015.12.26 08:23:22 #
  ******************************************************************************/
-static int sdk_ssvr_wiov_add(sdk_ssvr_t *ssvr, sdk_sct_t *sck)
+static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
 {
     size_t len;
     mesg_header_t *head;
@@ -674,7 +673,7 @@ static int sdk_ssvr_wiov_add(sdk_ssvr_t *ssvr, sdk_sct_t *sck)
         }
 
         /* > 弹出发送数据 */
-        head = list_lpop(ssvr->sendq);
+        head = sdk_queue_lpop(ssvr->sendq);
         if (NULL == head) {
             break;
         }
@@ -725,7 +724,7 @@ static int sdk_ssvr_send_data(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     for (;;) {
         /* 1. 填充发送缓存 */
         if (!wiov_isfull(send)) {
-            sdk_ssvr_wiov_add(ssvr, sck);
+            sdk_ssvr_wiov_add(ctx, ssvr, sck);
         }
 
         if (wiov_isempty(send)) {
@@ -856,7 +855,7 @@ static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
 
     /* > 验证长度 */
     len = SDK_DATA_TOTAL_LEN(head);
-    if ((int)len > list_length(ctx->recvq[0])) {
+    if ((int)len > sdk_queue_length(&ctx->recvq)) {
         ++ssvr->drop_total;
         log_error(ctx->log, "Data is too long! len:%d drop:%lu total:%lu",
               len, ssvr->drop_total, ssvr->recv_total);
@@ -877,7 +876,7 @@ static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
     /* > 放入队列 */
     memcpy(data, addr, len);
 
-    if (list_rpush(ctx->recvq[idx], data)) {
+    if (sdk_queue_rpush(&ctx->recvq, data)) {
         ++ssvr->drop_total;
         log_error(ctx->log, "Push into queue failed! len:%d drop:%lu total:%lu",
               len, ssvr->drop_total, ssvr->recv_total);
