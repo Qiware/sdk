@@ -515,7 +515,7 @@ int sdk_network_switch(sdk_cntx_t *ctx, int status)
 
     memset(&cmd, 0, sizeof(cmd));
 
-    cmd.type = status? SDK_CMD_NETWORK_ON : SDK_CMD_NETWORK_OFF;
+    cmd.type = status? SDK_CMD_NETWORK_CONN : SDK_CMD_NETWORK_DISCONN;
     sdk_ssvr_usck_path(conf, path, idx);
 
     if (spin_trylock(&ctx->cmd_sck_lck)) {

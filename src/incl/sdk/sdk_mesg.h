@@ -15,8 +15,8 @@ typedef enum
     , SDK_CMD_PROC_REQ                 = 0x0001  /* 处理客户端数据-请求 */
     , SDK_CMD_SEND                     = 0x0002  /* 发送数据-请求 */
     , SDK_CMD_SEND_ALL                 = 0x0003  /* 发送所有数据-请求 */
-    , SDK_CMD_NETWORK_ON               = 0x0004  /* 网络已开启-请求 */
-    , SDK_CMD_NETWORK_OFF              = 0x0005  /* 网络已断开-请求 */
+    , SDK_CMD_NETWORK_CONN             = 0x0004  /* 网络已开启-请求 */
+    , SDK_CMD_NETWORK_DISCONN          = 0x0005  /* 网络已断开-请求 */
 } sdk_mesg_e;
 
 /* 链路鉴权请求 */
@@ -117,7 +117,7 @@ typedef struct
 {
     uint32_t type;                      /* 命令类型 Range: sdk_cmd_e */
     char src_path[FILE_NAME_MAX_LEN];   /* 命令源路径 */
-    sdk_cmd_param_t param;             /* 其他数据信息 */
+    sdk_cmd_param_t param;              /* 其他数据信息 */
 } sdk_cmd_t;
 
 #endif /*__SDK_MESG_H__*/

@@ -7,7 +7,7 @@
 #include "queue.h"
 #include "sdk_mesg.h"
 
-#define SDK_RECONN_INTV        (1)     /* 连接重连间隔 */
+#define SDK_RECONN_INTV        (2)     /* 连接重连间隔 */
 #define SDK_KPALIVE_INTV       (250)   /* 保活间隔 */
 
 #define SDK_WORKER_HDL_QNUM    (2)     /* 各Worker线程负责的队列数 */

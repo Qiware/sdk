@@ -263,14 +263,16 @@ int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sc
     mesg_header_t *head = (mesg_header_t *)addr;
 
     ack = online_ack__unpack(NULL, head->len, (void *)(head + 1));
-    if (ack->has_code && (0 == ack->code)) {
-        ssvr->is_online_succ = true;
-    }
-    else {
-        ssvr->is_online_succ = false;
+    if (NULL == ack) {
+        log_error(ctx->log, "Unpack online ack failed!");
+        return SDK_ERR;
     }
 
+    ssvr->is_online_succ = (ack->has_code && (0 == ack->code))? true : false;
+
     log_debug(ctx->log, "code:%d msg:%s", ack->code, ack->msg);
+
+    online_ack__free_unpacked(ack, NULL);
 
     return SDK_OK;
 }

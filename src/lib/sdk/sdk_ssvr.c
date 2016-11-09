@@ -274,7 +274,7 @@ static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx)
 }
 
 /******************************************************************************
- **函数名称: sdk_ssvr_reconn
+ **函数名称: sdk_ssvr_try_reconn
  **功    能: 重连
  **输入参数:
  **     item: IP+PORT
@@ -285,7 +285,7 @@ static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx)
  **注意事项:
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
-static int sdk_ssvr_reconn(ip_port_t *item, sdk_ssvr_t *ssvr)
+static int sdk_ssvr_try_reconn(ip_port_t *item, sdk_ssvr_t *ssvr)
 {
     sdk_sct_t *sck = &ssvr->sck;
 
@@ -326,13 +326,16 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
         if (curr_tm > info->expire) { /* 判断CONN INFO是否过期 */
             if (sdk_ssvr_update_conn_info(ctx, ssvr)) {
                 log_error(ssvr->log, "Update conn information failed!");
-                return -1;
+                if (ssvr->sleep_sec < 300) {
+                    ssvr->sleep_sec = (!ssvr->sleep_sec)? SDK_RECONN_INTV : 2*ssvr->sleep_sec;
+                }
+                return SDK_ERR;
             }
         }
 
         sdk_ssvr_clear_mesg(ssvr);
 
-        if (NULL == list_find(info->iplist, (find_cb_t)sdk_ssvr_reconn, (void *)ssvr)) {
+        if (NULL == list_find(info->iplist, (find_cb_t)sdk_ssvr_try_reconn, (void *)ssvr)) {
             if (ssvr->sleep_sec < 300) {
                 ssvr->sleep_sec = (!ssvr->sleep_sec)? SDK_RECONN_INTV : 2*ssvr->sleep_sec;
             }
@@ -578,12 +581,15 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
                 return sdk_ssvr_send_data(ctx, ssvr);
             }
             return SDK_OK;
-        case SDK_CMD_NETWORK_ON:
+        case SDK_CMD_NETWORK_CONN:
+            log_debug(ssvr->log, "Network connected! type:[%d]", cmd->type);
             CLOSE(sck->fd);
             wiov_clean(send);
             ssvr->sleep_sec = 0;
             return SDK_OK;
-        case SDK_CMD_NETWORK_OFF:
+        case SDK_CMD_NETWORK_DISCONN:
+            log_debug(ssvr->log, "Network disconnect! type:[%d]", cmd->type);
+            CLOSE(sck->fd);
             CLOSE(sck->fd);
             wiov_clean(send);
             ssvr->sleep_sec = SDK_RECONN_INTV;
@@ -735,7 +741,7 @@ static int sdk_ssvr_send_data(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 
 /******************************************************************************
  **函数名称: sdk_ssvr_clear_mesg
- **功    能: 清空发送消息
+ **功    能: 清空系统消息队列
  **输入参数:
  **     ssvr: 发送服务
  **输出参数: NONE
@@ -978,9 +984,12 @@ static int sdk_ssvr_http_conn_info(sdk_cntx_t *ctx, char *conn_info_str)
     struct curl_slist *chunk = NULL;
     char host[SDK_HOST_MAX_LEN], url[URL_MAX_LEN];
 
+    curl_global_init(CURL_GLOBAL_ALL);
+
     curl = curl_easy_init();
     if (NULL == curl) {
         log_error(ctx->log, "Initialize curl failed!");
+        curl_global_cleanup();
         return -1;
     }
 
@@ -1023,6 +1032,7 @@ static int sdk_ssvr_http_conn_info(sdk_cntx_t *ctx, char *conn_info_str)
 
     /* free the custom headers */
     curl_slist_free_all(chunk);
+    curl_global_cleanup();
 
     log_debug(ctx->log, "data:%s", conn_info_str);
 
