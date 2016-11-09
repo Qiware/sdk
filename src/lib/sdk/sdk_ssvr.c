@@ -13,6 +13,8 @@
 #define SDK_HOST_MAX_LEN    (256)
 #define SDK_CONN_INFO_MAX_LEN    (1024)
 
+#define SDK_SET_SLEEP_SEC(ssvr, sec) ((ssvr)->sleep_sec = (sec));
+
 /* 静态函数 */
 static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx);
 
@@ -62,7 +64,7 @@ int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int idx)
     ssvr->log = ctx->log;
     ssvr->ctx = (void *)ctx;
     ssvr->sck.fd = INVALID_FD;
-    ssvr->sleep_sec = 1;
+    SDK_SET_SLEEP_SEC(ssvr, 1);
 
     /* > 创建发送队列 */
     ssvr->sendq = ctx->sendq[idx];
@@ -273,6 +275,15 @@ static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx)
     return (sdk_ssvr_t *)(ctx->sendtp->data + id * sizeof(sdk_ssvr_t));
 }
 
+/* 更新睡眠时间 */
+static int sdk_ssvr_update_sleep_sec(sdk_ssvr_t *ssvr)
+{
+    if (ssvr->sleep_sec < 300) {
+        ssvr->sleep_sec = (!ssvr->sleep_sec)? SDK_RECONN_INTV : 2*ssvr->sleep_sec;
+    }
+    return ssvr->sleep_sec;
+}
+
 /******************************************************************************
  **函数名称: sdk_ssvr_try_reconn
  **功    能: 重连
@@ -280,7 +291,7 @@ static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx)
  **     item: IP+PORT
  **     ssvr: 读写服务
  **输出参数: NONE
- **返    回: Address of sndsvr
+ **返    回: true:成功 false:失败
  **实现描述:
  **注意事项:
  **作    者: # Qifeng.zou # 2015.01.14 #
@@ -296,9 +307,50 @@ static int sdk_ssvr_try_reconn(ip_port_t *item, sdk_ssvr_t *ssvr)
         return false;
     }
 
-    ssvr->sleep_sec = SDK_RECONN_INTV;
+    SDK_SET_SLEEP_SEC(ssvr, SDK_RECONN_INTV);
 
     return true;
+}
+
+/******************************************************************************
+ **函数名称: sdk_ssvr_reconn
+ **功    能: 重连
+ **输入参数:
+ **     ctx: 全局对象
+ **     ssvr: 读写服务
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2015.01.14 #
+ ******************************************************************************/
+static int sdk_ssvr_reconn(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
+{
+    time_t curr_tm = time(NULL);
+    sdk_sct_t *sck = &ssvr->sck;
+    sdk_conn_info_t *info = &ssvr->conn_info;
+
+    if (curr_tm > info->expire) { /* 判断CONN INFO是否过期 */
+        if (sdk_ssvr_update_conn_info(ctx, ssvr)) {
+            sdk_ssvr_update_sleep_sec(ssvr);
+            log_error(ssvr->log, "Update conn information failed!");
+            return SDK_ERR;
+        }
+    }
+
+    sdk_ssvr_clear_mesg(ssvr);
+
+    if (NULL == list_find(info->iplist, (find_cb_t)sdk_ssvr_try_reconn, (void *)ssvr)) {
+        sdk_ssvr_update_sleep_sec(ssvr);
+        return SDK_ERR;
+    }
+
+    sdk_mesg_send_online_req(ctx, ssvr);
+
+    SDK_SET_SLEEP_SEC(ssvr, SDK_RECONN_INTV);
+    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_UNKNOWN);
+    return SDK_OK;
+
 }
 
 /******************************************************************************
@@ -319,34 +371,10 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     time_t curr_tm = time(NULL);
     sdk_sct_t *sck = &ssvr->sck;
-    sdk_conn_info_t *info = &ssvr->conn_info;
 
     /* 如果网路已断开, 则进行重连 */
     if (sck->fd < 0) {
-        if (curr_tm > info->expire) { /* 判断CONN INFO是否过期 */
-            if (sdk_ssvr_update_conn_info(ctx, ssvr)) {
-                log_error(ssvr->log, "Update conn information failed!");
-                if (ssvr->sleep_sec < 300) {
-                    ssvr->sleep_sec = (!ssvr->sleep_sec)? SDK_RECONN_INTV : 2*ssvr->sleep_sec;
-                }
-                return SDK_ERR;
-            }
-        }
-
-        sdk_ssvr_clear_mesg(ssvr);
-
-        if (NULL == list_find(info->iplist, (find_cb_t)sdk_ssvr_try_reconn, (void *)ssvr)) {
-            if (ssvr->sleep_sec < 300) {
-                ssvr->sleep_sec = (!ssvr->sleep_sec)? SDK_RECONN_INTV : 2*ssvr->sleep_sec;
-            }
-            return SDK_ERR;
-        }
-
-        sdk_mesg_send_online_req(ctx, ssvr);
-
-        ssvr->sleep_sec = SDK_RECONN_INTV;
-        sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_UNKNOWN);
-        return SDK_OK;
+        return sdk_ssvr_reconn(ctx, ssvr);
     }
 
     /* 1. 判断是否长时无数据 */
@@ -585,14 +613,14 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
             log_debug(ssvr->log, "Network connected! type:[%d]", cmd->type);
             CLOSE(sck->fd);
             wiov_clean(send);
-            ssvr->sleep_sec = 0;
+            SDK_SET_SLEEP_SEC(ssvr, 0);
             return SDK_OK;
         case SDK_CMD_NETWORK_DISCONN:
             log_debug(ssvr->log, "Network disconnect! type:[%d]", cmd->type);
             CLOSE(sck->fd);
             CLOSE(sck->fd);
             wiov_clean(send);
-            ssvr->sleep_sec = SDK_RECONN_INTV;
+            SDK_SET_SLEEP_SEC(ssvr, SDK_RECONN_INTV);
             return SDK_OK;
         default:
             log_error(ssvr->log, "Unknown command! type:[%d]", cmd->type);
