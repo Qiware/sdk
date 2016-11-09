@@ -23,11 +23,13 @@ typedef struct
     int nid;                            /* 设备ID: 唯一值 */
     char path[FILE_LINE_MAX_LEN];       /* 工作路径 */
 
-    uint64_t sessionid;                 /* 会话ID(备选) */
-    char devid[SDK_DEV_ID_LEN];         /* 设备ID */
-    char clientid[SDK_CLIENT_ID_LEN];   /* 客户端ID(必须提供) */
-    char appkey[SDK_APP_KEY_LEN];       /* APP KEY */
-    char version[SDK_CLIENT_ID_LEN];    /* 客户端自身版本号(留做统计用) */
+    struct {
+        uint64_t sessionid;                 /* 会话ID(备选) */
+        char devid[SDK_DEV_ID_LEN];         /* 设备ID */
+        char clientid[SDK_CLIENT_ID_LEN];   /* 客户端ID(必须提供) */
+        char appkey[SDK_APP_KEY_LEN];       /* APP KEY */
+        char version[SDK_CLIENT_ID_LEN];    /* 客户端自身版本号(留做统计用) */
+    };
 
     int log_level;                      /* 日志级别 */
     char log_path[FILE_LINE_MAX_LEN];   /* 日志路径(路径+文件名) */
