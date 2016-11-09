@@ -31,14 +31,11 @@ SRC_LIST = ./sdk.c \
 		   ./core/str.c \
 		   ./core/log.c \
 		   ./core/logsvr.c \
-		   ./core/ring.c \
-		   ./core/slot.c \
 		   ./core/redo.c \
 		   ./core/list.c \
 		   ./core/list2.c \
 		   ./core/lock.c \
 		   ./core/iovec.c \
-		   ./core/queue.c \
 		   ./core/sck_tcp.c \
 		   ./core/sck_udp.c \
 		   ./core/sck_unix.c \

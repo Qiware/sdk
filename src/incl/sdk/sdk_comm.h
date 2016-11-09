@@ -4,7 +4,6 @@
 #include "sck.h"
 #include "comm.h"
 #include "iovec.h"
-#include "queue.h"
 #include "sdk_mesg.h"
 
 #define SDK_RECONN_INTV        (2)     /* 连接重连间隔 */

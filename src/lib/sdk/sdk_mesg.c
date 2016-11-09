@@ -1,7 +1,6 @@
 #include "str.h"
 #include "sdk.h"
 #include "redo.h"
-#include "queue.h"
 #include "sdk_mesg.h"
 #include "sdk_comm.h"
 #include "mesg.pb-c.h"

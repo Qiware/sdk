@@ -1,7 +1,6 @@
 #include "str.h"
 #include "sdk.h"
 #include "redo.h"
-#include "queue.h"
 #include "sdk_mesg.h"
 #include "sdk_comm.h"
 #include "mesg.pb-c.h"
@@ -92,7 +91,7 @@ int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, int idx)
     }
 
     /* > 初始化发送缓存(注: 程序退出时才可释放此空间，其他任何情况下均不释放) */
-    if (wiov_init(&sck->send, 2 * conf->sendq.max)) {
+    if (wiov_init(&sck->send, 2 * conf->sendq_len)) {
         log_error(ssvr->log, "Initialize send iov failed!");
         return SDK_ERR;
     }
@@ -165,7 +164,7 @@ void sdk_ssvr_set_rwset(sdk_ssvr_t *ssvr)
 
         /* 2 设置写集合: 发送至接收端 */
         if (!list_empty(ssvr->sck.mesg_list)
-            || !queue_empty(ssvr->sendq)) {
+            || !list_empty(ssvr->sendq)) {
             FD_SET(ssvr->sck.fd, &ssvr->wset);
             return;
         }
@@ -647,11 +646,8 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
  ******************************************************************************/
 static int sdk_ssvr_wiov_add(sdk_ssvr_t *ssvr, sdk_sct_t *sck)
 {
-#define RTSD_POP_NUM    (1024)
     size_t len;
-    int num, idx;
     mesg_header_t *head;
-    void *data[RTSD_POP_NUM];
     wiov_t *send = &sck->send;
 
     /* > 从消息链表取数据 */
@@ -673,33 +669,21 @@ static int sdk_ssvr_wiov_add(sdk_ssvr_t *ssvr, sdk_sct_t *sck)
 
     /* > 从发送队列取数据 */
     for (;;) {
-        /* > 判断剩余空间(WARNNING: 勿将共享变量参与三目运算, 否则可能出现严重错误!!!) */
-        num = MIN(wiov_left_space(send), RTSD_POP_NUM);
-        num = MIN(num, queue_used(ssvr->sendq));
-        if (0 == num) {
-            break; /* 空间不足 */
+        if (!wiov_left_space(send)) {
+            break;
         }
 
         /* > 弹出发送数据 */
-        num = queue_mpop(ssvr->sendq, data, num);
-        if (0 == num) {
-            continue;
+        head = list_lpop(ssvr->sendq);
+        if (NULL == head) {
+            break;
         }
 
-        log_trace(ssvr->log, "Multi-pop num:%d!", num);
+        len = sizeof(mesg_header_t) + head->len;
 
-        for (idx=0; idx<num; ++idx) {
-            /* > 是否有数据 */
-            head = (mesg_header_t *)data[idx];
+        SDK_HEAD_HTON(head, head);
 
-            len = sizeof(mesg_header_t) + head->len;
-
-            /* > 设置发送数据 */
-            SDK_HEAD_HTON(head, head);
-
-            /* > 设置发送数据 */
-            wiov_item_add(send, head, len, ssvr->sendq, queue_dealloc);
-        }
+        wiov_item_add(send, head, len, NULL, mem_dealloc);
     }
 
     return 0;
@@ -872,7 +856,7 @@ static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
 
     /* > 验证长度 */
     len = SDK_DATA_TOTAL_LEN(head);
-    if ((int)len > queue_size(ctx->recvq[0])) {
+    if ((int)len > list_length(ctx->recvq[0])) {
         ++ssvr->drop_total;
         log_error(ctx->log, "Data is too long! len:%d drop:%lu total:%lu",
               len, ssvr->drop_total, ssvr->recv_total);
@@ -882,22 +866,22 @@ static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
    /* > 申请空间 */
     idx = rand() % ctx->conf.work_thd_num;
 
-    data = queue_malloc(ctx->recvq[idx], len);
+    data = (void *)calloc(1, len);
     if (NULL == data) {
         ++ssvr->drop_total;
-        log_error(ctx->log, "Alloc from queue failed! drop:%lu recv:%lu size:%d/%d",
-              ssvr->drop_total, ssvr->recv_total, len, queue_size(ctx->recvq[idx]));
+        log_error(ctx->log, "Alloc memory failed! drop:%lu recv:%lu",
+              ssvr->drop_total, ssvr->recv_total, len);
         return SDK_ERR;
     }
 
     /* > 放入队列 */
     memcpy(data, addr, len);
 
-    if (queue_push(ctx->recvq[idx], data)) {
+    if (list_rpush(ctx->recvq[idx], data)) {
         ++ssvr->drop_total;
         log_error(ctx->log, "Push into queue failed! len:%d drop:%lu total:%lu",
               len, ssvr->drop_total, ssvr->recv_total);
-        queue_dealloc(ctx->recvq[idx], data);
+        free(data);
         return SDK_ERR;
     }
 

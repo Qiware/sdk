@@ -56,7 +56,7 @@ typedef struct
     int id;                             /* 对象ID */
     void *ctx;                          /* 存储sdk_t对象 */
     log_cycle_t *log;                   /* 日志对象 */
-    queue_t *sendq;                     /* 发送缓存 */
+    list_t *sendq;                      /* 发送缓存 */
 
     int sleep_sec;                      /* 睡眠秒 */
     int cmd_sck_id;                     /* 命令通信套接字ID */

@@ -221,10 +221,7 @@ static int sdk_worker_event_core_hdl(sdk_cntx_t *ctx, sdk_worker_t *worker)
  ******************************************************************************/
 static int sdk_worker_cmd_proc_req_hdl(sdk_cntx_t *ctx, sdk_worker_t *worker, const sdk_cmd_t *cmd)
 {
-#define RTSD_WORK_POP_NUM   (1024)
-    int idx, num;
-    void *addr[RTSD_WORK_POP_NUM];
-    queue_t *rq;
+    list_t *rq;
     sdk_reg_t *reg, key;
     mesg_header_t *head;
     const sdk_cmd_proc_req_t *work_cmd = (const sdk_cmd_proc_req_t *)&cmd->param;
@@ -234,46 +231,35 @@ static int sdk_worker_cmd_proc_req_hdl(sdk_cntx_t *ctx, sdk_worker_t *worker, co
 
     while (1) {
         /* > 从接收队列获取数据 */
-        num = MIN(queue_used(rq), RTSD_WORK_POP_NUM);
-        if (0 == num) {
-            return SDK_OK;
+        head = list_lpop(rq);
+        if (NULL == head) {
+            break;
         }
 
-        num = queue_mpop(rq, addr, num);
-        if (0 == num) {
-            continue;
-        }
+        /* > 执行回调函数 */
+        key.cmd = head->cmd;
 
-        log_trace(worker->log, "Multi-pop num:%d!", num);
-
-        for (idx=0; idx<num; ++idx) {
-            /* > 执行回调函数 */
-            head = (mesg_header_t *)addr[idx];
-
-            key.cmd = head->cmd;
-
+        reg = avl_query(ctx->reg, &key);
+        if (NULL == reg) {
+            key.cmd = 0; // 未知命令
             reg = avl_query(ctx->reg, &key);
             if (NULL == reg) {
-                key.cmd = 0; // 未知命令
-                reg = avl_query(ctx->reg, &key);
-                if (NULL == reg) {
-                    ++worker->drop_total;   /* 丢弃计数 */
-                    queue_dealloc(rq, addr[idx]);
-                    continue;
-                }
+                ++worker->drop_total;   /* 丢弃计数 */
+                free(head);
+                continue;
             }
-
-            if (reg->proc(head->cmd, head->from,
-                addr[idx] + sizeof(mesg_header_t), head->len, reg->param)) {
-                ++worker->err_total;    /* 错误计数 */
-            }
-            else {
-                ++worker->proc_total;   /* 处理计数 */
-            }
-
-            /* > 释放内存空间 */
-            queue_dealloc(rq, addr[idx]);
         }
+
+        if (reg->proc(head->cmd, head->from,
+            (void *)(head + 1), head->len, reg->param)) {
+            ++worker->err_total;    /* 错误计数 */
+        }
+        else {
+            ++worker->proc_total;   /* 处理计数 */
+        }
+
+        /* > 释放内存空间 */
+        free(head);
     }
 
     return SDK_OK;

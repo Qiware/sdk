@@ -111,7 +111,7 @@ static int sdk_creat_recvq(sdk_cntx_t *ctx)
     sdk_conf_t *conf = &ctx->conf;
 
     /* > 创建队列对象 */
-    ctx->recvq = (queue_t **)calloc(SDK_SSVR_NUM, sizeof(queue_t *));
+    ctx->recvq = (list_t **)calloc(SDK_SSVR_NUM, sizeof(list_t *));
     if (NULL == ctx->recvq) {
         log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
         return SDK_ERR;
@@ -119,7 +119,7 @@ static int sdk_creat_recvq(sdk_cntx_t *ctx)
 
     /* > 创建接收队列 */
     for (idx=0; idx<conf->work_thd_num; ++idx) {
-        ctx->recvq[idx] = queue_creat(conf->recvq.max, conf->recvq.size);
+        ctx->recvq[idx] = list_creat(NULL);
         if (NULL == ctx->recvq[idx]) {
             log_error(ctx->log, "Create recvq failed!");
             return SDK_ERR;
@@ -143,10 +143,9 @@ static int sdk_creat_recvq(sdk_cntx_t *ctx)
 static int sdk_creat_sendq(sdk_cntx_t *ctx)
 {
     int idx;
-    sdk_conf_t *conf = &ctx->conf;
 
     /* > 创建队列对象 */
-    ctx->sendq = (queue_t **)calloc(SDK_SSVR_NUM, sizeof(queue_t *));
+    ctx->sendq = (list_t **)calloc(SDK_SSVR_NUM, sizeof(list_t *));
     if (NULL == ctx->sendq) {
         log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
         return SDK_ERR;
@@ -154,7 +153,7 @@ static int sdk_creat_sendq(sdk_cntx_t *ctx)
 
     /* > 创建发送队列 */
     for (idx=0; idx<SDK_SSVR_NUM; ++idx) {
-        ctx->sendq[idx] = queue_creat(conf->sendq.max, conf->sendq.size);
+        ctx->sendq[idx] = list_creat(NULL);
         if (NULL == ctx->sendq[idx]) {
             log_error(ctx->log, "Create send queue failed!");
             return SDK_ERR;
@@ -429,6 +428,8 @@ static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx, int idx)
  **     nid: 源结点ID
  **     data: 数据地址
  **     size: 数据长度
+ **     timeout: 超时时间
+ **     cb: 该包发送结果回调(成功/失败/超时)
  **输出参数: NONE
  **返    回: 0:成功 !0:失败
  **实现描述: 将数据按照约定格式放入队列中
@@ -450,7 +451,8 @@ static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx, int idx)
  **     3. 只要SSVR未处于未上线成功的状态, 则认为联网失败.
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
-int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to, const void *data, size_t size)
+int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
+        const void *data, size_t size, int timeout, sdk_send_cb_t cb)
 {
     int idx;
     void *addr;
@@ -460,10 +462,10 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to, const void *data, size
     /* > 选择发送队列 */
     idx = (num++) % SDK_SSVR_NUM;
 
-    addr = queue_malloc(ctx->sendq[idx], sizeof(mesg_header_t)+size);
+    addr = (void *)calloc(1, sizeof(mesg_header_t)+size);
     if (NULL == addr) {
-        log_error(ctx->log, "Alloc from queue failed! size:%d/%d",
-                size+sizeof(mesg_header_t), queue_size(ctx->sendq[idx]));
+        log_error(ctx->log, "Alloc memory [%d] failed! errmsg:[%d] %s!",
+                size+sizeof(mesg_header_t), errno, strerror(errno));
         return SDK_ERR;
     }
 
@@ -478,13 +480,13 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to, const void *data, size
 
     memcpy(head+1, data, size);
 
-    log_debug(ctx->log, "rq:%p Head type:%d sid:%d length:%d flag:%d!",
-          ctx->sendq[idx]->ring, head->cmd, head->from, head->len, head->flag);
+    log_debug(ctx->log, "idx:%d Head type:%d sid:%d length:%d flag:%d!",
+          idx, head->cmd, head->from, head->len, head->flag);
 
     /* > 放入发送队列 */
-    if (queue_push(ctx->sendq[idx], addr)) {
+    if (list_rpush(ctx->sendq[idx], addr)) {
         log_error(ctx->log, "Push into shmq failed!");
-        queue_dealloc(ctx->sendq[idx], addr);
+        free(addr);
         return SDK_ERR;
     }
 
@@ -533,5 +535,4 @@ int sdk_network_switch(sdk_cntx_t *ctx, int status)
     }
 
     return SDK_OK;
-
 }
