@@ -366,9 +366,9 @@ int sdk_send_mgr_init(sdk_cntx_t *ctx)
  **注意事项:
  **作    者: # Qifeng.zou # 2016.11.09 17:52:58 #
  ******************************************************************************/
-uint64_t sdk_gen_seq(sdk_cntx_t *ctx)
+uint32_t sdk_gen_seq(sdk_cntx_t *ctx)
 {
-    uint64_t seq;
+    uint32_t seq;
     sdk_send_mgr_t *mgr = &ctx->mgr;
 
     pthread_rwlock_wrlock(&mgr->lock);
@@ -414,7 +414,7 @@ int sdk_send_mgr_insert(sdk_cntx_t *ctx, sdk_send_item_t *item)
  **注意事项:
  **作    者: # Qifeng.zou # 2016.11.10 10:09:45 #
  ******************************************************************************/
-int sdk_send_mgr_delete(sdk_cntx_t *ctx, uint64_t seq)
+int sdk_send_mgr_delete(sdk_cntx_t *ctx, uint32_t seq)
 {
     sdk_send_item_t key, *item;
     sdk_send_mgr_t *mgr = &ctx->mgr;
@@ -595,7 +595,7 @@ int sdk_trav_send_item(sdk_cntx_t *ctx)
  **注意事项:
  **作    者: # Qifeng.zou # 2016.11.10 10:09:45 #
  ******************************************************************************/
-sdk_send_item_t *sdk_send_mgr_query(sdk_cntx_t *ctx, uint64_t seq, lock_e lock)
+sdk_send_item_t *sdk_send_mgr_query(sdk_cntx_t *ctx, uint32_t seq, lock_e lock)
 {
     sdk_send_item_t key, *item;
     sdk_send_mgr_t *mgr = &ctx->mgr;
@@ -658,12 +658,14 @@ int sdk_send_succ_hdl(sdk_cntx_t *ctx, void *addr, size_t len)
 {
     uint16_t cmd;
     void *data;
-    uint64_t seq;
+    uint32_t seq;
     sdk_send_item_t *item;
     mesg_header_t *head = (mesg_header_t *)addr;
 
     cmd = ntohs(head->cmd);
-    seq = ntoh64(head->seq);
+    seq = ntohl(head->seq);
+
+    log_debug(ctx->log, "Send success! cmd:%d seq:%d", cmd, seq);
 
     item = sdk_send_mgr_query(ctx, seq, WRLOCK);
     if (NULL == item) {
@@ -697,12 +699,14 @@ int sdk_send_fail_hdl(sdk_cntx_t *ctx, void *addr, size_t len)
 {
     uint16_t cmd;
     void *data;
-    uint64_t seq;
+    uint32_t seq;
     sdk_send_item_t *item;
     mesg_header_t *head = (mesg_header_t *)addr;
 
     cmd = ntohs(head->cmd);
-    seq = ntoh64(head->seq);
+    seq = ntohl(head->seq);
+
+    log_debug(ctx->log, "Send fail! cmd:%d seq:%d", cmd, seq);
 
     /* > 更新发送状态 */
     item = sdk_send_mgr_query(ctx, seq, WRLOCK);
@@ -772,7 +776,7 @@ bool sdk_send_timeout_hdl(sdk_cntx_t *ctx, void *addr)
  **注意事项: 此时协议头依然为网络字节序
  **作    者: # Qifeng.zou # 2016.11.10 11:48:21 #
  ******************************************************************************/
-bool sdk_ack_succ_hdl(sdk_cntx_t *ctx, uint64_t seq, void *ack)
+bool sdk_ack_succ_hdl(sdk_cntx_t *ctx, uint32_t seq, void *ack)
 {
     void *data;
     sdk_send_item_t key, *item;
@@ -784,6 +788,7 @@ bool sdk_ack_succ_hdl(sdk_cntx_t *ctx, uint64_t seq, void *ack)
 
     ack_item = avl_query(ctx->cmd, &ack_key);
     if (NULL == ack_item) {
+        log_debug(ctx->log, "Didn't find request command!");
         return false;
     }
 
@@ -792,6 +797,7 @@ bool sdk_ack_succ_hdl(sdk_cntx_t *ctx, uint64_t seq, void *ack)
     pthread_rwlock_wrlock(&mgr->lock);
     item = rbt_query(mgr->tab, (void *)&key);
     if (NULL == item) {
+        log_debug(ctx->log, "Didn't find seq! seq:%d", seq);
         pthread_rwlock_unlock(&mgr->lock);
         return false;
     }

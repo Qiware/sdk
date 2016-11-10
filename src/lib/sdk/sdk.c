@@ -138,7 +138,7 @@ int sdk_launch(sdk_cntx_t *ctx)
  **功    能: 添加命令"应答 -> 请求"的映射
  **输入参数:
  **     ctx: 全局对象
- **     cmd: 请求命令
+ **     req: 请求命令
  **     ack: 应答命令
  **输出参数: NONE
  **返    回: 0:成功 !0:失败
@@ -146,7 +146,7 @@ int sdk_launch(sdk_cntx_t *ctx)
  **注意事项: 不允许重复注册
  **作    者: # Qifeng.zou # 2016.11.10 16:50:18 #
  ******************************************************************************/
-int sdk_cmd_add(sdk_cntx_t *ctx, uint16_t cmd, uint16_t ack)
+int sdk_cmd_add(sdk_cntx_t *ctx, uint16_t req, uint16_t ack)
 {
     sdk_cmd_ack_t *item;
 
@@ -157,10 +157,10 @@ int sdk_cmd_add(sdk_cntx_t *ctx, uint16_t cmd, uint16_t ack)
     }
 
     item->ack = ack;
-    item->req = cmd;
+    item->req = req;
 
     if (avl_insert(ctx->cmd, item)) {
-        log_error(ctx->log, "Register maybe repeat! cmd:%d!", cmd);
+        log_error(ctx->log, "Register maybe repeat! cmd:%d ack:%d!", req, ack);
         free(item);
         return SDK_ERR_REPEAT_REG;
     }
@@ -276,8 +276,8 @@ int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
 
     memcpy(head+1, data, size);
 
-    log_debug(ctx->log, "Head type:%d sid:%d length:%d flag:%d!",
-            head->cmd, head->from, head->len, head->flag);
+    log_debug(ctx->log, "Head type:%d sid:%d length:%d flag:%d seq:%d!",
+            head->cmd, head->from, head->len, head->flag, head->seq);
 
     /* > 设置发送单元 */
     item = (sdk_send_item_t *)calloc(1, sizeof(sdk_send_item_t));
