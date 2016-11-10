@@ -49,7 +49,7 @@ typedef struct
 /* 发送管理表 */
 typedef struct
 {
-    time_t trav_tm;                     /* 遍历时间 */
+    time_t next_trav_tm;                /* 下一次遍历的时间 */
     pthread_rwlock_t lock;              /* 读写锁 */
     uint32_t seq;                       /* 序列号 */
     rbt_tree_t *tab;                    /* 管理表 */
@@ -121,16 +121,17 @@ sdk_worker_t *sdk_worker_get_by_idx(sdk_cntx_t *ctx, int idx);
 
 int sdk_mesg_send_ping_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
-int sdk_mesg_send_sync_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
+int sdk_mesg_send_sync_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck);
 
-int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
-int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
-int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr);
+int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck);
+int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck);
+int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck, void *addr);
 
 uint32_t sdk_gen_seq(sdk_cntx_t *ctx);
 int sdk_send_mgr_init(sdk_cntx_t *ctx);
 int sdk_send_mgr_insert(sdk_cntx_t *ctx, sdk_send_item_t *item);
 int sdk_send_mgr_delete(sdk_cntx_t *ctx, uint32_t seq);
+bool sdk_send_mgr_empty(sdk_cntx_t *ctx);
 sdk_send_item_t *sdk_send_mgr_query(sdk_cntx_t *ctx, uint32_t seq, lock_e lock);
 int sdk_send_mgr_unlock(sdk_cntx_t *ctx, lock_e lock);
 

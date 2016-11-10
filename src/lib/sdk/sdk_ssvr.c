@@ -5,14 +5,13 @@
 #include "sdk_comm.h"
 #include "mesg.pb-c.h"
 
+#include <math.h>
 #include <curl/curl.h>
 #include <cjson/cJSON.h>
 
 #define URL_MAX_LEN (1024)
 #define SDK_HOST_MAX_LEN    (256)
 #define SDK_CONN_INFO_MAX_LEN    (1024)
-
-#define SDK_SET_SLEEP_SEC(ssvr, sec) ((ssvr)->sleep_sec = (sec));
 
 /* 静态函数 */
 static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx);
@@ -22,10 +21,10 @@ static int sdk_ssvr_creat_usck(sdk_ssvr_t *ssvr, const sdk_conf_t *conf);
 static int sdk_ssvr_recv_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 static int sdk_ssvr_recv_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 
-static int sdk_ssvr_data_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
+static int sdk_ssvr_data_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck);
 static bool sdk_is_sys_mesg(uint16_t cmd);
-static int sdk_sys_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr);
-static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr);
+static int sdk_sys_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck, void *addr);
+static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck, void *addr);
 
 static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr);
 static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t *cmd);
@@ -54,14 +53,13 @@ int sdk_ssvr_init(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     void *addr;
     sdk_conf_t *conf = &ctx->conf;
-    sdk_sct_t *sck = &ssvr->sck;
+    sdk_sck_t *sck = &ssvr->sck;
     sdk_snap_t *recv = &sck->recv;
     sdk_conn_info_t *info = &ssvr->conn_info;
 
     ssvr->log = ctx->log;
     ssvr->ctx = (void *)ctx;
     ssvr->sck.fd = INVALID_FD;
-    SDK_SET_SLEEP_SEC(ssvr, 1);
 
     /* > 创建发送队列 */
     ssvr->sendq = &ctx->sendq;
@@ -135,6 +133,49 @@ static int sdk_ssvr_creat_usck(sdk_ssvr_t *ssvr, const sdk_conf_t *conf)
 }
 
 /******************************************************************************
+ **函数名称: sdk_ssvr_get_timeout
+ **功    能: 获取SELECT的超时时间
+ **输入参数:
+ **     ctx: 全局对象
+ **     ssvr: 发送服务对象
+ **输出参数: NONE
+ **返    回: 超时时间
+ **实现描述: 超时时间由重连时间/心跳时间/发送队列是否为空等其他超时时间决定.
+ **注意事项:
+ **     1. 当发送队列中存在数据时, 超时时间降为1秒.
+ **     2. 触发超时时, 重连时间/心跳时间需要相应的降低.
+ **作    者: # Qifeng.zou # 2016.11.10 22:55:37 #
+ ******************************************************************************/
+static int sdk_ssvr_get_timeout(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
+{
+    sdk_sck_t *sck = &ssvr->sck;
+    sdk_send_mgr_t *mgr = &ctx->mgr;
+    time_t min, diff, tm = time(NULL);
+
+    if ((tm > ssvr->next_conn_tm)
+        || (!sdk_send_mgr_empty(ctx) && tm > mgr->next_trav_tm)
+        || (tm > sck->next_kpalive_tm)) {
+        return 0; /* 立即 */
+    }
+
+    min = tm - ssvr->next_conn_tm;
+
+    if (!sdk_send_mgr_empty(ctx)) {
+        diff = tm - mgr->next_trav_tm;
+        min = (min < diff)? min : diff;
+    }
+
+    diff = tm - sck->next_kpalive_tm;
+    min = (min < diff)? min : diff;
+
+    if (!sdk_queue_empty(&ctx->sendq)) {
+        min = (min < 1)? min : 1; /* 间隔1秒 */
+    }
+
+    return min;
+}
+
+/******************************************************************************
  **函数名称: sdk_ssvr_set_rwset
  **功    能: 设置读写集
  **输入参数:
@@ -189,7 +230,7 @@ void sdk_ssvr_set_rwset(sdk_ssvr_t *ssvr)
 void *sdk_ssvr_routine(void *_ctx)
 {
     int ret;
-    sdk_sct_t *sck;
+    sdk_sck_t *sck;
     sdk_ssvr_t *ssvr;
     struct timeval timeout;
     sdk_cntx_t *ctx = (sdk_cntx_t *)_ctx;
@@ -211,7 +252,7 @@ void *sdk_ssvr_routine(void *_ctx)
         /* 3.2 等待事件通知 */
         sdk_ssvr_set_rwset(ssvr);
 
-        timeout.tv_sec = ssvr->sleep_sec;
+        timeout.tv_sec = sdk_ssvr_get_timeout(ctx, ssvr);
         timeout.tv_usec = 0;
         ret = select(ssvr->max+1, &ssvr->rset, &ssvr->wset, NULL, &timeout);
         if (ret < 0) {
@@ -274,17 +315,30 @@ static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx)
     return (sdk_ssvr_t *)(ctx->sendtp->data + id * sizeof(sdk_ssvr_t));
 }
 
-/* 更新睡眠时间 */
-static int sdk_ssvr_update_sleep_sec(sdk_ssvr_t *ssvr)
+/* 连接后的处理 */
+static int sdk_ssvr_conn_after_hdl(sdk_ssvr_t *ssvr, bool succ)
 {
-    if (ssvr->sleep_sec < 300) {
-        ssvr->sleep_sec = (!ssvr->sleep_sec)? SDK_RECONN_INTV : 2*ssvr->sleep_sec;
+#define SDK_CONN_MAX_SEC    (300)
+    time_t intv, tm = time(NULL);
+
+    if (succ) { // 成功
+        ssvr->try_conn_times = 0;
+        ssvr->next_conn_tm = tm + SDK_CONN_MAX_SEC;
     }
-    return ssvr->sleep_sec;
+    else { // 失败
+        ++ssvr->try_conn_times;
+        intv = pow(4, ssvr->try_conn_times);
+        if (intv > SDK_CONN_MAX_SEC) {
+            intv = SDK_CONN_MAX_SEC;
+        }
+        ssvr->next_conn_tm = tm + intv;
+    }
+
+    return 0;
 }
 
 /******************************************************************************
- **函数名称: sdk_ssvr_try_reconn
+ **函数名称: sdk_ssvr_try_conn_hdl
  **功    能: 重连
  **输入参数:
  **     item: IP+PORT
@@ -295,9 +349,9 @@ static int sdk_ssvr_update_sleep_sec(sdk_ssvr_t *ssvr)
  **注意事项:
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
-static int sdk_ssvr_try_reconn(ip_port_t *item, sdk_ssvr_t *ssvr)
+static int sdk_ssvr_try_conn_hdl(ip_port_t *item, sdk_ssvr_t *ssvr)
 {
-    sdk_sct_t *sck = &ssvr->sck;
+    sdk_sck_t *sck = &ssvr->sck;
 
     /* > 重连接入层 */
     if ((sck->fd = tcp_connect(AF_INET, item->ipaddr, item->port)) < 0) {
@@ -305,8 +359,6 @@ static int sdk_ssvr_try_reconn(ip_port_t *item, sdk_ssvr_t *ssvr)
                 item->ipaddr, item->port, errno, strerror(errno));
         return false;
     }
-
-    SDK_SET_SLEEP_SEC(ssvr, SDK_RECONN_INTV);
 
     return true;
 }
@@ -325,13 +377,16 @@ static int sdk_ssvr_try_reconn(ip_port_t *item, sdk_ssvr_t *ssvr)
  ******************************************************************************/
 static int sdk_ssvr_reconn(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
-    time_t curr_tm = time(NULL);
-    sdk_sct_t *sck = &ssvr->sck;
+    time_t tm = time(NULL);
+    sdk_sck_t *sck = &ssvr->sck;
     sdk_conn_info_t *info = &ssvr->conn_info;
 
-    if (curr_tm > info->expire) { /* 判断CONN INFO是否过期 */
+    sck->kpalive_times = 0;
+    sck->next_kpalive_tm = tm + SDK_PING_MAX_SEC;
+
+    if (tm > info->expire) { /* 判断CONN INFO是否过期 */
         if (sdk_ssvr_update_conn_info(ctx, ssvr)) {
-            sdk_ssvr_update_sleep_sec(ssvr);
+            sdk_ssvr_conn_after_hdl(ssvr, false);
             log_error(ssvr->log, "Update conn information failed!");
             return SDK_ERR;
         }
@@ -339,17 +394,14 @@ static int sdk_ssvr_reconn(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 
     sdk_ssvr_clear_mesg(ssvr);
 
-    ssvr->last_conn_tm = time(NULL);
-
-    if (NULL == list_find(info->iplist, (find_cb_t)sdk_ssvr_try_reconn, (void *)ssvr)) {
-        sdk_ssvr_update_sleep_sec(ssvr);
+    if (NULL == list_find(info->iplist, (find_cb_t)sdk_ssvr_try_conn_hdl, (void *)ssvr)) {
+        sdk_ssvr_conn_after_hdl(ssvr, false);
         return SDK_ERR;
     }
 
     sdk_mesg_send_online_req(ctx, ssvr);
 
-    SDK_SET_SLEEP_SEC(ssvr, SDK_RECONN_INTV);
-    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_UNKNOWN);
+    sdk_ssvr_conn_after_hdl(ssvr, true);
     return SDK_OK;
 
 }
@@ -370,8 +422,8 @@ static int sdk_ssvr_reconn(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
  ******************************************************************************/
 static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
-    time_t diff, tm = time(NULL);
-    sdk_sct_t *sck = &ssvr->sck;
+    time_t tm = time(NULL);
+    sdk_sck_t *sck = &ssvr->sck;
 
     sdk_trav_send_item(ctx);
 
@@ -381,8 +433,7 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     }
 
     /* 1. 判断是否长时无数据 */
-    diff = tm - sck->last_kpalive_tm;
-    if (diff < SDK_KPALIVE_INTV) {
+    if (tm < sck->next_kpalive_tm) {
         return SDK_OK;
     }
 
@@ -422,7 +473,7 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 static int sdk_ssvr_recv_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     int n, left;
-    sdk_sct_t *sck = &ssvr->sck;
+    sdk_sck_t *sck = &ssvr->sck;
     sdk_snap_t *recv = &sck->recv;
 
     sck->rdtm = time(NULL);
@@ -497,7 +548,7 @@ static int sdk_ssvr_recv_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
  **     addr     optr             iptr                   end
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
-static int sdk_ssvr_data_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
+static int sdk_ssvr_data_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck)
 {
     mesg_header_t *head;
     uint32_t len, mesg_len;
@@ -609,7 +660,7 @@ static int sdk_ssvr_recv_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
  ******************************************************************************/
 static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t *cmd)
 {
-    sdk_sct_t *sck = &ssvr->sck;
+    sdk_sck_t *sck = &ssvr->sck;
     wiov_t *send = &sck->send;
 
     switch (cmd->type) {
@@ -624,7 +675,7 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
             log_debug(ssvr->log, "Network connected! type:[%d]", cmd->type);
             CLOSE(sck->fd);
             wiov_clean(send);
-            SDK_SET_SLEEP_SEC(ssvr, 0);
+            ssvr->next_conn_tm = 0;
             ssvr->is_online_succ = false;
             return SDK_OK;
         case SDK_CMD_NETWORK_DISCONN:
@@ -632,8 +683,8 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
             CLOSE(sck->fd);
             CLOSE(sck->fd);
             wiov_clean(send);
+            ssvr->next_conn_tm = 0;
             ssvr->is_online_succ = false;
-            SDK_SET_SLEEP_SEC(ssvr, SDK_RECONN_INTV);
             return SDK_OK;
         default:
             log_error(ssvr->log, "Unknown command! type:[%d]", cmd->type);
@@ -658,7 +709,7 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
  **                享变量的值可能被其他进程或线程修改, 导致出现严重错误!
  **作    者: # Qifeng.zou # 2015.12.26 08:23:22 #
  ******************************************************************************/
-static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
+static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck)
 {
     size_t len;
     mesg_header_t *head;
@@ -735,7 +786,7 @@ static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
 static int sdk_ssvr_send_data(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     ssize_t n;
-    sdk_sct_t *sck = &ssvr->sck;
+    sdk_sck_t *sck = &ssvr->sck;
     wiov_t *send = &sck->send;
 
     sck->wrtm = time(NULL);
@@ -831,7 +882,7 @@ static bool sdk_is_sys_mesg(uint16_t cmd)
  **注意事项:
  **作    者: # Qifeng.zou # 2015.01.16 #
  ******************************************************************************/
-static int sdk_sys_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr)
+static int sdk_sys_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck, void *addr)
 {
     mesg_header_t *head = (mesg_header_t *)addr;
 
@@ -865,7 +916,7 @@ static int sdk_sys_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, 
  **注意事项:
  **作    者: # Qifeng.zou # 2015.05.19 #
  ******************************************************************************/
-static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr)
+static int sdk_exp_mesg_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck, void *addr)
 {
     void *data;
     int idx, len;

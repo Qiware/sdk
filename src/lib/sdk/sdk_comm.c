@@ -555,7 +555,7 @@ int sdk_trav_send_item(sdk_cntx_t *ctx)
     sdk_send_item_t *item;
     sdk_send_mgr_t *mgr = &ctx->mgr;
 
-    if (tm - mgr->trav_tm < 3) {
+    if (tm < mgr->next_trav_tm) {
         return 0; /* 未超时 */
     }
 
@@ -569,7 +569,6 @@ int sdk_trav_send_item(sdk_cntx_t *ctx)
 
     pthread_rwlock_wrlock(&mgr->lock);
     rbt_trav(mgr->tab, (trav_cb_t)sdk_send_mgr_trav_timeout_cb, (void *)list);
-    mgr->trav_tm = time(NULL);
     while (1) {
         item = list_lpop(list);
         if (NULL == item) {
@@ -579,6 +578,13 @@ int sdk_trav_send_item(sdk_cntx_t *ctx)
         sdk_send_item_timeout_hdl(ctx, item);
     }
     list_destroy(list, NULL, mem_dummy_dealloc);
+
+    if (rbt_num(mgr->tab)) {
+        mgr->next_trav_tm = tm + 3;
+    }
+    else {
+        mgr->next_trav_tm = tm + SDK_PING_MAX_SEC;
+    }
     pthread_rwlock_unlock(&mgr->lock);
 
     return 0;
@@ -638,6 +644,29 @@ int sdk_send_mgr_unlock(sdk_cntx_t *ctx, lock_e lock)
     pthread_rwlock_unlock(&mgr->lock);
 
     return 0;
+}
+
+/******************************************************************************
+ **函数名称: sdk_send_mgr_empty
+ **功    能: 发送管理表是否为空
+ **输入参数:
+ **     ctx: 全局对象
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述: 
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.10 10:23:34 #
+ ******************************************************************************/
+bool sdk_send_mgr_empty(sdk_cntx_t *ctx)
+{
+    int num;
+    sdk_send_mgr_t *mgr = &ctx->mgr;
+
+    pthread_rwlock_rdlock(&mgr->lock);
+    num = rbt_num(mgr->tab);
+    pthread_rwlock_unlock(&mgr->lock);
+
+    return (bool)num;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

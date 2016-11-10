@@ -30,15 +30,12 @@ int sdk_mesg_send_ping_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     void *addr;
     mesg_header_t *head;
     int size = sizeof(mesg_header_t);
-    sdk_sct_t *sck = &ssvr->sck;
+    sdk_sck_t *sck = &ssvr->sck;
     wiov_t *send = &ssvr->sck.send;
     sdk_conn_info_t *info = &ssvr->conn_info;
 
     /* 1. 上次发送保活请求之后 仍未收到应答 */
-    if ((sck->fd < 0)
-        || (SDK_KPALIVE_STAT_SENT == sck->kpalive
-            && sck->kpalive_times > 3 ))
-    {
+    if ((sck->fd < 0) || (sck->kpalive_times > 3)) {
         CLOSE(sck->fd);
         wiov_clean(send);
         log_error(ssvr->log, "Didn't get keepalive respond for a long time!");
@@ -69,8 +66,7 @@ int sdk_mesg_send_ping_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     log_debug(ssvr->log, "Add ping request success!");
 
     ++sck->kpalive_times;
-    sck->last_kpalive_tm = time(NULL);
-    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SENT);
+    sck->next_kpalive_tm = time(NULL) + SDK_PING_MIN_SEC;
     return SDK_OK;
 }
 
@@ -94,7 +90,7 @@ int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     void *addr;
     size_t size;
     mesg_header_t *head;
-    sdk_sct_t *sck = &ssvr->sck;
+    sdk_sck_t *sck = &ssvr->sck;
     sdk_conf_t *conf = &ctx->conf;
     sdk_conn_info_t *info = &ssvr->conn_info;
     Online online = ONLINE__INIT;
@@ -157,7 +153,7 @@ int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
  **注意事项:
  **作    者: # Qifeng.zou # 2016.11.09 09:54:53 #
  ******************************************************************************/
-int sdk_mesg_send_sync_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
+int sdk_mesg_send_sync_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck)
 {
     void *addr;
     size_t size;
@@ -208,12 +204,13 @@ int sdk_mesg_send_sync_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
  **注意事项:
  **作    者: # Qifeng.zou # 2016.11.08 20:42:56 #
  ******************************************************************************/
-int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
+int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck)
 {
     log_debug(ssvr->log, "Recv pong!");
 
     sck->kpalive_times = 0;
-    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SUCC);
+    sck->next_kpalive_tm = time(NULL) + SDK_PING_MAX_SEC;
+
     return SDK_OK;
 }
 
@@ -232,10 +229,10 @@ int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
  **注意事项: 收到服务端主动下发的PING, 客户端无需应答PONG, 而是直接发送PING请求.
  **作    者: # Qifeng.zou # 2016.11.08 20:42:56 #
  ******************************************************************************/
-int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
+int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck)
 {
     sck->kpalive_times = 0;
-    sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SUCC);
+    sck->next_kpalive_tm = time(NULL) + SDK_PING_MAX_SEC;
     sdk_mesg_send_ping_req(ctx, ssvr);
     return SDK_OK;
 }
@@ -257,7 +254,7 @@ int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
  **注意事项:
  **作    者: # Qifeng.zou # 2016.11.08 20:39:40 #
  ******************************************************************************/
-int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr)
+int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sck, void *addr)
 {
     OnlineAck *ack;
     mesg_header_t *head = (mesg_header_t *)addr;

@@ -7,6 +7,9 @@
 #include "sdk_comm.h"
 #include "thread_pool.h"
 
+#define SDK_PING_MIN_SEC    (5)
+#define SDK_PING_MAX_SEC    (300)
+
 /* COMM的UNIX-UDP路径 */
 #define sdk_comm_usck_path(conf, _path) \
     snprintf(_path, sizeof(_path), "%s/.sdk/%d_comm.usck", (conf)->path, (conf)->nid)
@@ -33,19 +36,13 @@ typedef struct
     time_t wrtm;                        /* 最近写入操作时间 */
     time_t rdtm;                        /* 最近读取操作时间 */
 
-#define SDK_KPALIVE_STAT_UNKNOWN   (0) /* 未知状态 */
-#define SDK_KPALIVE_STAT_SENT      (1) /* 已发送保活 */
-#define SDK_KPALIVE_STAT_SUCC      (2) /* 保活成功 */
-    int kpalive;                        /* 保活状态(0:未知 1:已发送 2:保活成功) */
     int kpalive_times;                  /* 保活次数 */
-    time_t last_kpalive_tm;             /* 上次发送保活请求的时间 */
+    time_t next_kpalive_tm;             /* 下次发送保活请求的时间 */
     list_t *mesg_list;                  /* 发送链表 */
 
     sdk_snap_t recv;                   /* 接收快照 */
     wiov_t send;                       /* 发送信息 */
-} sdk_sct_t;
-
-#define sdk_set_kpalive_stat(sck, _stat) (sck)->kpalive = (_stat)
+} sdk_sck_t;
 
 /* 连接信息 */
 typedef struct
@@ -64,15 +61,19 @@ typedef struct
     log_cycle_t *log;                   /* 日志对象 */
     sdk_queue_t *sendq;                 /* 发送缓存 */
 
-    int sleep_sec;                      /* 睡眠秒 */
     int cmd_sck_id;                     /* 命令通信套接字ID */
-    sdk_sct_t sck;                      /* 发送套接字 */
+    sdk_sck_t sck;                      /* 发送套接字 */
 
     int max;                            /* 套接字最大值 */
     fd_set rset;                        /* 读集合 */
     fd_set wset;                        /* 写集合 */
 
-    time_t last_conn_tm;                /* 上一次尝试连接的时间(通过此值控制重连的频率) */
+    int try_conn_times;                 /* 尝试连接的次数(连接成功后清零) */
+    time_t next_conn_tm;                /* 下一次尝试连接的时间(通过此值控制重连的频率) */
+
+    int try_ping_times;                 /* 尝试PING的次数(收到PONG后清零) */
+    time_t next_ping_tm;                /* 下一次发送PING的时间 */
+
     bool is_online_succ;                /* 上线是否成功 */
     sdk_conn_info_t conn_info;          /* CONN INFO信息 */
 
