@@ -650,7 +650,6 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
 static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
 {
     size_t len;
-    void *addr;
     mesg_header_t *head;
     sdk_send_item_t *item;
     wiov_t *send = &sck->send;
@@ -669,7 +668,7 @@ static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
         SDK_HEAD_HTON(head, head);
 
         /* > 设置发送数据 */
-        wiov_item_add(send, head, len, NULL, mem_dealloc);
+        wiov_item_add(send, head, len, NULL, mem_dealloc, mem_dealloc);
     }
 
     /* > 从发送队列取数据 */
@@ -679,19 +678,12 @@ static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
         }
 
         /* > 弹出发送数据 */
-        item = sdk_queue_lpop(ssvr->sendq);
-        if (NULL == item) {
+        head = sdk_queue_lpop(ssvr->sendq);
+        if (NULL == head) {
             break;
         }
-
-        head = (mesg_header_t *)item->data;
-        if (time(NULL) >= item->ttl) { /* 已经超时 */
-            addr = (void *)(head + 1);
-            if (item->cb) {
-                item->cb(addr, head->len, SDK_SEND_TIMEOUT, item->param);
-            }
-            FREE(item->data);
-            FREE(item);
+        /* > 判断是否超时 */
+        else if (sdk_send_timeout_hdl(ctx, (void *)head)) {
             continue;
         }
 
@@ -699,7 +691,7 @@ static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
 
         SDK_HEAD_HTON(head, head);
 
-        wiov_item_add(send, head, len, NULL, mem_dealloc);
+        wiov_item_add(send, head, len, (void *)ctx, sdk_send_succ_hdl, sdk_send_fail_hdl);
         FREE(item);
     }
 

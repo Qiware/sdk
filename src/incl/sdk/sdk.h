@@ -2,6 +2,8 @@
 #define __SDK_PROXY_H__
 
 #include "log.h"
+#include "lock.h"
+#include "rb_tree.h"
 #include "spinlock.h"
 #include "sdk_ssvr.h"
 
@@ -9,29 +11,44 @@
 #define SDK_CLIENT_ID_LEN   (64)        /* 客户端ID长度 */
 #define SDK_APP_KEY_LEN     (128)       /* 应用KEY长度 */
 
+/* 发送状态 */
 typedef enum
 {
-    SDK_SEND_OK                         /* 发送成功 */
-    , SDK_SEND_FAIL                     /* 发送失败 */
-    , SDK_SEND_TIMEOUT                  /* 发送超时 */
-} sdk_callback_reason_e;
+    SDK_STAT_IN_SENDQ                   /* 发送队列中... */
+    , SDK_STAT_SENDING                  /* 正在发送... */
+    , SDK_STAT_SEND_SUCC                /* 发送成功 */
+    , SDK_STAT_SEND_FAIL                /* 发送失败 */
+    , SDK_STAT_SEND_TIMEOUT             /* 发送超时 */
+    , SDK_STAT_RESP_TIMEOUT             /* 应答超时 */
+} sdk_send_stat_e;
 
 /* 发送结果回调
  *  data: 被发送的数据
  *  len: 数据长度
  *  reason: 回调原因(0:发送成功 -1:发送失败 -2:超时未发送 -3:发送后超时未应答)
  * 作用: 发送成功还是失败都会调用此回调 */
-typedef int (*sdk_send_cb_t)(void *data, size_t size, sdk_callback_reason_e reason, void *param);
+typedef int (*sdk_send_cb_t)(int cmd, const void *data, size_t size, sdk_send_stat_e stat, void *param);
 
 /* 发送单元 */
 typedef struct
 {
+    uint64_t seq;                       /* 序列号 */
+    sdk_send_stat_e stat;               /* 处理状态 */
+
     int cmd;                            /* 命令类型 */
     time_t ttl;                         /* 超时时间 */
     void *data;                         /* 发送数据 */
     sdk_send_cb_t cb;                   /* 发送回调 */
     void *param;                        /* 回调参数 */
 } sdk_send_item_t;
+
+/* 发送管理表 */
+typedef struct
+{
+    pthread_rwlock_t lock;              /* 读写锁 */
+    uint64_t seq;                       /* 序列号 */
+    rbt_tree_t *tab;                    /* 管理表 */
+} sdk_send_mgr_t;
 
 /* 配置信息 */
 typedef struct
@@ -75,11 +92,10 @@ typedef struct
     thread_pool_t *worktp;              /* 工作线程池 */
 
     avl_tree_t *reg;                    /* 回调注册对象(注: 存储sdk_reg_t数据) */
+    sdk_send_mgr_t mgr;                 /* 发送管理表 */
 
     sdk_queue_t recvq;                  /* 接收队列 */
     sdk_queue_t sendq;                  /* 发送队列 */
-
-    uint64_t sequence;                  /* 发送序列(从1开始递增) */
 } sdk_cntx_t;
 
 /* 内部接口 */
@@ -98,6 +114,16 @@ int sdk_mesg_send_sync_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
 int sdk_mesg_pong_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
 int sdk_mesg_ping_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck);
 int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck, void *addr);
+
+uint64_t sdk_gen_seq(sdk_cntx_t *ctx);
+int sdk_send_mgr_insert(sdk_cntx_t *ctx, sdk_send_item_t *item);
+int sdk_send_mgr_delete(sdk_cntx_t *ctx, uint64_t seq);
+sdk_send_item_t *sdk_send_mgr_query(sdk_cntx_t *ctx, uint64_t seq, lock_e lock);
+int sdk_send_mgr_unlock(sdk_cntx_t *ctx, lock_e lock);
+
+int sdk_send_succ_hdl(sdk_cntx_t *ctx, void *addr, size_t len);
+int sdk_send_fail_hdl(sdk_cntx_t *ctx, void *addr, size_t len);
+bool sdk_send_timeout_hdl(sdk_cntx_t *ctx, void *addr);
 
 int sdk_queue_init(sdk_queue_t *q);
 int sdk_queue_length(sdk_queue_t *q);

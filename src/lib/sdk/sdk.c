@@ -385,6 +385,7 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
 
     /* > 判断网络是否正常 */
     if (!ssvr->is_online_succ) {
+        cb(cmd, data, size, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "Network is still disconnect!");
         return SDK_ERR_NETWORK_DISCONN; /* 网络已断开 */
     }
@@ -392,6 +393,7 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
     /* > 申请内存空间 */
     addr = (void *)calloc(1, sizeof(mesg_header_t)+size);
     if (NULL == addr) {
+        cb(cmd, data, size, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "Alloc memory [%d] failed! errmsg:[%d] %s!",
                 size+sizeof(mesg_header_t), errno, strerror(errno));
         return SDK_ERR;
@@ -405,34 +407,41 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
     head->len = size;
     head->from = ctx->sid;
     head->to = to;
-    head->seq = ++ctx->sequence;
+    head->seq = sdk_gen_seq(ctx);
 
     memcpy(head+1, data, size);
 
     log_debug(ctx->log, "Head type:%d sid:%d length:%d flag:%d!",
-          head->cmd, head->from, head->len, head->flag);
+            head->cmd, head->from, head->len, head->flag);
 
     /* > 设置发送单元 */
     item = (sdk_send_item_t *)calloc(1, sizeof(sdk_send_item_t));
     if (NULL == item) {
+        cb(cmd, data, size, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
         FREE(head);
         return SDK_ERR;
     }
 
+    item->seq = head->seq;
+    item->stat = SDK_STAT_IN_SENDQ;
     item->cmd = cmd;
     item->ttl = time(NULL) + timeout;
     item->cb = cb;
     item->data = (void *)addr;
     item->param = param;
 
-    /* > 放入发送队列 */
-    if (sdk_queue_rpush(&ctx->sendq, (void *)item)) {
-        log_error(ctx->log, "Push into shmq failed!");
+    /* > 放入管理表 */
+    if (sdk_send_mgr_insert(ctx, item)) {
+        cb(cmd, data, size, SDK_STAT_SEND_FAIL, param);
+        log_error(ctx->log, "Insert send mgr tab failed!");
         FREE(addr);
         FREE(item);
         return SDK_ERR;
     }
+
+    /* > 放入发送队列 */
+    sdk_queue_rpush(&ctx->sendq, (void *)addr);
 
     /* > 通知发送线程 */
     sdk_cli_cmd_send_req(ctx);
