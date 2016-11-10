@@ -1,4 +1,5 @@
 #include "sdk.h"
+#include "redo.h"
 #include "rb_tree.h"
 
 /******************************************************************************
@@ -88,6 +89,29 @@ void *sdk_queue_lpop(sdk_queue_t *q)
     pthread_mutex_unlock(&q->lock);
 
     return data;
+}
+
+/******************************************************************************
+ **函数名称: sdk_queue_remove
+ **功    能: 移除某数据
+ **输入参数:
+ **     q: 队列
+ **     data: 数据指针
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述: 
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.10 14:34:11 #
+ ******************************************************************************/
+int sdk_queue_remove(sdk_queue_t *q, void *data)
+{
+    int ret;
+
+    pthread_mutex_lock(&q->lock);
+    ret = list_remove(q->list, data);
+    pthread_mutex_unlock(&q->lock);
+
+    return ret;
 }
 
 /******************************************************************************
@@ -226,6 +250,152 @@ int sdk_send_mgr_delete(sdk_cntx_t *ctx, uint64_t seq)
 }
 
 /******************************************************************************
+ **函数名称: sdk_send_item_timeout_hdl
+ **功    能: 超时发送项的处理
+ **输入参数:
+ **     ctx: 全局对象
+ **     item: 发送单元
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述: 
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.10 15:04:50 #
+ ******************************************************************************/
+static int sdk_send_item_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
+{
+    void *data;
+    sdk_send_item_t key, *temp;
+    sdk_send_mgr_t *mgr = &ctx->mgr;
+
+    data = (void *)(item->data + sizeof(mesg_header_t));
+
+    switch (item->stat) {
+        case SDK_STAT_IN_SENDQ: /* 依然在发送队列 */
+            key.seq = item->seq;
+            rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
+            sdk_queue_remove(&ctx->sendq, item->data);
+            item->stat = SDK_STAT_SEND_TIMEOUT; /* 发送超时 */
+            if (item->cb) {
+                item->cb(item->cmd, data, item->len, item->stat, item->param);
+            }
+            FREE(item->data);
+            FREE(item);
+            return SDK_OK;
+        case SDK_STAT_SENDING:  /* 正在发送中...(无法撤回) */
+            return SDK_OK;
+        case SDK_STAT_SEND_SUCC: /* 已发送成功 */
+            key.seq = item->seq;
+            rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
+            item->stat = SDK_STAT_ACK_TIMEOUT;
+            if (item->cb) {
+                item->cb(item->cmd, data, item->len, item->stat, item->param);
+            }
+            FREE(item->data);
+            FREE(item);
+            return SDK_OK;
+        case SDK_STAT_SEND_FAIL:
+            key.seq = item->seq;
+            rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
+            if (item->cb) {
+                item->cb(item->cmd, data, item->len, item->stat, item->param);
+            }
+            FREE(item->data);
+            FREE(item);
+            return SDK_OK;
+        case SDK_STAT_SEND_TIMEOUT:
+            key.seq = item->seq;
+            rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
+            if (item->cb) {
+                item->cb(item->cmd, data, item->len, item->stat, item->param);
+            }
+            FREE(item->data);
+            FREE(item);
+            return SDK_OK;
+        case SDK_STAT_ACK_SUCC:
+            key.seq = item->seq;
+            rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
+            if (item->cb) {
+                item->cb(item->cmd, data, item->len, item->stat, item->param);
+            }
+            FREE(item->data);
+            FREE(item);
+            return SDK_OK;
+        case SDK_STAT_ACK_TIMEOUT:
+            key.seq = item->seq;
+            rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
+            if (item->cb) {
+                item->cb(item->cmd, data, item->len, item->stat, item->param);
+            }
+            FREE(item->data);
+            FREE(item);
+            return SDK_OK;
+    }
+
+    return SDK_OK;
+}
+
+/* 获取超时发送项 */
+static int sdk_send_mgr_trav_timeout_cb(sdk_send_item_t *item, list_t *list)
+{
+    time_t tm = time(NULL);
+
+    if (tm < item->ttl) {
+        return 0; /* 未超时 */
+    }
+    else if (SDK_STAT_SENDING == item->stat) {
+        return 0;
+    }
+
+    list_rpush(list, item);
+
+    return 0;
+}
+
+/******************************************************************************
+ **函数名称: sdk_trav_send_item
+ **功    能: 遍历发送项
+ **输入参数:
+ **     ctx: 全局对象
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述: 
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.10 10:23:34 #
+ ******************************************************************************/
+int sdk_trav_send_item(sdk_cntx_t *ctx)
+{
+    list_t *list;
+    time_t tm = time(NULL);
+    sdk_send_item_t *item;
+    sdk_send_mgr_t *mgr = &ctx->mgr;
+
+    if (tm - mgr->trav_tm < 3) {
+        return 0; /* 未超时 */
+    }
+
+    list = list_creat(NULL);
+    if (NULL == list) {
+        log_error(ctx->log, "Create timeout list failed!");
+        return -1;
+    }
+
+    pthread_rwlock_wrlock(&mgr->lock);
+    rbt_trav(mgr->tab, (trav_cb_t)sdk_send_mgr_trav_timeout_cb, (void *)list);
+    while (1) {
+        item = list_lpop(list);
+        if (NULL == item) {
+            break;
+        }
+
+        sdk_send_item_timeout_hdl(ctx, item);
+    }
+    list_destroy(list, NULL, mem_dummy_dealloc);
+    pthread_rwlock_unlock(&mgr->lock);
+
+    return 0;
+}
+
+/******************************************************************************
  **函数名称: sdk_send_mgr_query
  **功    能: 更新发送项
  **输入参数:
@@ -281,6 +451,9 @@ int sdk_send_mgr_unlock(sdk_cntx_t *ctx, lock_e lock)
     return 0;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
 /******************************************************************************
  **函数名称: sdk_send_succ_hdl
  **功    能: 发送成功后的处理
@@ -312,7 +485,7 @@ int sdk_send_succ_hdl(sdk_cntx_t *ctx, void *addr, size_t len)
     item->stat = SDK_STAT_SEND_SUCC;
     if (item->cb) {
         data = (void *)(head + 1);
-        item->cb(cmd, data, len - sizeof(mesg_header_t), item->stat, item->param);
+        item->cb(cmd, data, item->len, item->stat, item->param);
     }
 
     sdk_send_mgr_unlock(ctx, WRLOCK);
@@ -352,7 +525,7 @@ int sdk_send_fail_hdl(sdk_cntx_t *ctx, void *addr, size_t len)
     item->stat = SDK_STAT_SEND_FAIL;
     if (item->cb) {
         data = (void *)(head + 1);
-        item->cb(cmd, data, len - sizeof(mesg_header_t), item->stat, item->param);
+        item->cb(cmd, data, item->len, item->stat, item->param);
     }
 
     sdk_send_mgr_unlock(ctx, WRLOCK);
@@ -395,6 +568,42 @@ bool sdk_send_timeout_hdl(sdk_cntx_t *ctx, void *addr)
     }
     item->stat = SDK_STAT_SENDING;
     sdk_send_mgr_unlock(ctx, WRLOCK);
+
+    return false;
+}
+
+/******************************************************************************
+ **函数名称: sdk_ack_succ_hdl
+ **功    能: 应答成功的处理
+ **输入参数:
+ **     ctx: 全局对象
+ **     seq: 序列号
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述: 
+ **注意事项: 此时协议头依然为网络字节序
+ **作    者: # Qifeng.zou # 2016.11.10 11:48:21 #
+ ******************************************************************************/
+int sdk_ack_succ_hdl(sdk_cntx_t *ctx, uint64_t seq)
+{
+    void *data;
+    sdk_send_item_t key, *item;
+    sdk_send_mgr_t *mgr = &ctx->mgr;
+
+    key.seq = seq;
+
+    pthread_rwlock_wrlock(&mgr->lock);
+    rbt_delete(mgr->tab, (void *)&key, (void **)&item);
+    pthread_rwlock_unlock(&mgr->lock);
+    if (NULL == item) {
+        return -1;
+    }
+
+    data = (void *)(item->data + sizeof(mesg_header_t));
+    item->cb(item->cmd, data, item->len, SDK_STAT_ACK_SUCC, item->param);
+
+    free(item->data);
+    free(item);
 
     return false;
 }

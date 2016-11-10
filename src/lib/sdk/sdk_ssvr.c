@@ -239,6 +239,8 @@ void *sdk_ssvr_routine(void *_ctx)
         if (FD_ISSET(sck->fd, &ssvr->rset)) {
             sdk_ssvr_recv_proc(ctx, ssvr);
         }
+
+        sdk_trav_send_item(ctx);
     }
 
     abort();
@@ -368,6 +370,8 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     time_t curr_tm = time(NULL);
     sdk_sct_t *sck = &ssvr->sck;
+
+    sdk_trav_send_item(ctx);
 
     /* 如果网路已断开, 则进行重连 */
     if (sck->fd < 0) {
@@ -538,6 +542,9 @@ static int sdk_ssvr_data_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
             return SDK_ERR;
         }
 
+        /* > 收到应答处理 */
+        sdk_ack_succ_hdl(ctx, head->seq);
+
         /* 2.3 如果是系统消息 */
         if (sdk_is_sys_mesg(head->cmd)) {
             if (sdk_sys_mesg_proc(ctx, ssvr, sck, recv->optr)) {
@@ -651,7 +658,6 @@ static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
 {
     size_t len;
     mesg_header_t *head;
-    sdk_send_item_t *item;
     wiov_t *send = &sck->send;
 
     /* > 从消息链表取数据 */
@@ -692,7 +698,6 @@ static int sdk_ssvr_wiov_add(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
         SDK_HEAD_HTON(head, head);
 
         wiov_item_add(send, head, len, (void *)ctx, sdk_send_succ_hdl, sdk_send_fail_hdl);
-        FREE(item);
     }
 
     return 0;

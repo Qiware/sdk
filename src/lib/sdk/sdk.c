@@ -426,6 +426,7 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
     item->seq = head->seq;
     item->stat = SDK_STAT_IN_SENDQ;
     item->cmd = cmd;
+    item->len = size;
     item->ttl = time(NULL) + timeout;
     item->cb = cb;
     item->data = (void *)addr;

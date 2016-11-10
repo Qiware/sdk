@@ -19,7 +19,8 @@ typedef enum
     , SDK_STAT_SEND_SUCC                /* 发送成功 */
     , SDK_STAT_SEND_FAIL                /* 发送失败 */
     , SDK_STAT_SEND_TIMEOUT             /* 发送超时 */
-    , SDK_STAT_RESP_TIMEOUT             /* 应答超时 */
+    , SDK_STAT_ACK_SUCC                 /* 应答成功 */
+    , SDK_STAT_ACK_TIMEOUT              /* 应答超时 */
 } sdk_send_stat_e;
 
 /* 发送结果回调
@@ -36,6 +37,7 @@ typedef struct
     sdk_send_stat_e stat;               /* 处理状态 */
 
     int cmd;                            /* 命令类型 */
+    int len;                            /* 报体长度 */
     time_t ttl;                         /* 超时时间 */
     void *data;                         /* 发送数据 */
     sdk_send_cb_t cb;                   /* 发送回调 */
@@ -45,6 +47,7 @@ typedef struct
 /* 发送管理表 */
 typedef struct
 {
+    time_t trav_tm;                     /* 遍历时间 */
     pthread_rwlock_t lock;              /* 读写锁 */
     uint64_t seq;                       /* 序列号 */
     rbt_tree_t *tab;                    /* 管理表 */
@@ -121,9 +124,12 @@ int sdk_send_mgr_delete(sdk_cntx_t *ctx, uint64_t seq);
 sdk_send_item_t *sdk_send_mgr_query(sdk_cntx_t *ctx, uint64_t seq, lock_e lock);
 int sdk_send_mgr_unlock(sdk_cntx_t *ctx, lock_e lock);
 
+int sdk_trav_send_item(sdk_cntx_t *ctx);
+
 int sdk_send_succ_hdl(sdk_cntx_t *ctx, void *addr, size_t len);
 int sdk_send_fail_hdl(sdk_cntx_t *ctx, void *addr, size_t len);
 bool sdk_send_timeout_hdl(sdk_cntx_t *ctx, void *addr);
+int sdk_ack_succ_hdl(sdk_cntx_t *ctx, uint64_t seq);
 
 int sdk_queue_init(sdk_queue_t *q);
 int sdk_queue_length(sdk_queue_t *q);
