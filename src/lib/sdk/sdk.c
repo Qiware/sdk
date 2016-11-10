@@ -5,90 +5,6 @@
 #include "sdk.h"
 #include "sdk_mesg.h"
 
-static int sdk_lock_server(const sdk_conf_t *conf);
-static int sdk_creat_cmd_usck(sdk_cntx_t *ctx);
-
-/******************************************************************************
- **函数名称: sdk_creat_workers
- **功    能: 创建工作线程线程池
- **输入参数:
- **     ctx: 全局对象
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项:
- **作    者: # Qifeng.zou # 2015.08.19 #
- ******************************************************************************/
-static int sdk_creat_workers(sdk_cntx_t *ctx)
-{
-    int idx;
-    sdk_worker_t *worker;
-    sdk_conf_t *conf = &ctx->conf;
-
-    /* > 创建对象 */
-    worker = (sdk_worker_t *)calloc(conf->work_thd_num, sizeof(sdk_worker_t));
-    if (NULL == worker) {
-        return SDK_ERR;
-    }
-
-    /* > 创建线程池 */
-    ctx->worktp = thread_pool_init(conf->work_thd_num, NULL, (void *)worker);
-    if (NULL == ctx->worktp) {
-        free(worker);
-        return SDK_ERR;
-    }
-
-    /* > 初始化线程 */
-    for (idx=0; idx<conf->work_thd_num; ++idx) {
-        if (sdk_worker_init(ctx, worker+idx, idx)) {
-            free(worker);
-            thread_pool_destroy(ctx->worktp);
-            return SDK_ERR;
-        }
-    }
-
-    return SDK_OK;
-}
-
-/******************************************************************************
- **函数名称: sdk_creat_sends
- **功    能: 创建发送线程线程池
- **输入参数:
- **     ctx: 全局对象
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项:
- **作    者: # Qifeng.zou # 2015.08.19 #
- ******************************************************************************/
-static int sdk_creat_sends(sdk_cntx_t *ctx)
-{
-    /* > 创建对象 */
-    ctx->ssvr = (sdk_ssvr_t *)calloc(1, sizeof(sdk_ssvr_t));
-    if (NULL == ctx->ssvr) {
-        log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
-        return SDK_ERR;
-    }
-
-    /* > 创建线程池 */
-    ctx->sendtp = thread_pool_init(1, NULL, (void *)ctx->ssvr);
-    if (NULL == ctx->sendtp) {
-        log_error(ctx->log, "Initialize thread pool failed!");
-        FREE(ctx->ssvr);
-        return SDK_ERR;
-    }
-
-    /* > 初始化线程 */
-    if (sdk_ssvr_init(ctx, ctx->ssvr)) {
-        log_fatal(ctx->log, "Initialize send thread failed!");
-        FREE(ctx->ssvr);
-        thread_pool_destroy(ctx->sendtp);
-        return SDK_ERR;
-    }
-
-    return SDK_OK;
-}
-
 /******************************************************************************
  **函数名称: sdk_init
  **功    能: 初始化发送端
@@ -137,6 +53,14 @@ sdk_cntx_t *sdk_init(const sdk_conf_t *conf)
             log_fatal(log, "Create register map failed!");
             break;
         }
+
+        /* > 请求<->应答 映射表 */
+        ctx->cmd = avl_creat(NULL, (cmp_cb_t)sdk_ack_cmp_cb);
+        if (NULL == ctx->cmd) {
+            log_fatal(log, "Create cmd map failed!");
+            break;
+        }
+
         /* > 创建通信套接字 */
         if (sdk_creat_cmd_usck(ctx)) {
             log_fatal(log, "Create cmd socket failed!");
@@ -152,6 +76,12 @@ sdk_cntx_t *sdk_init(const sdk_conf_t *conf)
         /* > 创建发送队列 */
         if (sdk_queue_init(&ctx->sendq)) {
             log_fatal(log, "Create send queue failed!");
+            break;
+        }
+
+        /* > 发送单元管理表 */
+        if (sdk_send_mgr_init(ctx)) {
+            log_fatal(log, "Send mgr table failed!");
             break;
         }
 
@@ -204,6 +134,41 @@ int sdk_launch(sdk_cntx_t *ctx)
 }
 
 /******************************************************************************
+ **函数名称: sdk_cmd_add
+ **功    能: 添加命令"应答 -> 请求"的映射
+ **输入参数:
+ **     ctx: 全局对象
+ **     cmd: 请求命令
+ **     ack: 应答命令
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项: 不允许重复注册
+ **作    者: # Qifeng.zou # 2016.11.10 16:50:18 #
+ ******************************************************************************/
+int sdk_cmd_add(sdk_cntx_t *ctx, uint16_t cmd, uint16_t ack)
+{
+    sdk_cmd_ack_t *item;
+
+    item = (sdk_cmd_ack_t *)calloc(1, sizeof(sdk_cmd_ack_t));
+    if (NULL == item) {
+        log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
+        return -1;
+    }
+
+    item->ack = ack;
+    item->req = cmd;
+
+    if (avl_insert(ctx->cmd, item)) {
+        log_error(ctx->log, "Register maybe repeat! cmd:%d!", cmd);
+        free(item);
+        return SDK_ERR_REPEAT_REG;
+    }
+
+    return SDK_OK;
+}
+
+/******************************************************************************
  **函数名称: sdk_register
  **功    能: 消息处理的注册接口
  **输入参数:
@@ -219,7 +184,7 @@ int sdk_launch(sdk_cntx_t *ctx)
  **     2. 不允许重复注册
  **作    者: # Qifeng.zou # 2015.05.19 #
  ******************************************************************************/
-int sdk_register(sdk_cntx_t *ctx, int cmd, sdk_reg_cb_t proc, void *param)
+int sdk_register(sdk_cntx_t *ctx, uint16_t cmd, sdk_reg_cb_t proc, void *param)
 {
     sdk_reg_t *item;
 
@@ -238,106 +203,6 @@ int sdk_register(sdk_cntx_t *ctx, int cmd, sdk_reg_cb_t proc, void *param)
         free(item);
         return SDK_ERR_REPEAT_REG;
     }
-
-    return SDK_OK;
-}
-
-/******************************************************************************
- **函数名称: sdk_creat_cmd_usck
- **功    能: 创建命令套接字
- **输入参数:
- **     ctx: 上下文信息
- **     idx: 目标队列序号
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项:
- **作    者: # Qifeng.zou # 2015.01.14 #
- ******************************************************************************/
-static int sdk_creat_cmd_usck(sdk_cntx_t *ctx)
-{
-    char path[FILE_NAME_MAX_LEN];
-
-    sdk_comm_usck_path(&ctx->conf, path);
-
-    spin_lock_init(&ctx->cmd_sck_lck);
-    ctx->cmd_sck_id = unix_udp_creat(path);
-    if (ctx->cmd_sck_id < 0) {
-        log_error(ctx->log, "errmsg:[%d] %s! path:%s", errno, strerror(errno), path);
-        return SDK_ERR;
-    }
-
-    return SDK_OK;
-}
-
-/******************************************************************************
- **函数名称: sdk_lock_server
- **功    能: 锁住指定路径(注: 防止路径和结点ID相同的配置)
- **输入参数:
- **     conf: 配置信息
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项: 文件描述符可不用关闭
- **作    者: # Qifeng.zou # 2016.05.02 21:14:39 #
- ******************************************************************************/
-static int sdk_lock_server(const sdk_conf_t *conf)
-{
-    int fd;
-    char path[FILE_NAME_MAX_LEN];
-
-    sdk_lock_path(conf, path);
-
-    Mkdir2(path, DIR_MODE);
-
-    fd = Open(path, O_CREAT|O_RDWR, OPEN_MODE);
-    if (fd < 0) {
-        return -1;
-    }
-
-    if (proc_try_wrlock(fd)) {
-        close(fd);
-        return -1;
-    }
-    return 0;
-}
-
-/******************************************************************************
- **函数名称: sdk_cli_cmd_send_req
- **功    能: 通知Send服务线程
- **输入参数:
- **     ctx: 上下文信息
- **输出参数: NONE
- **返    回: 0:成功 !0:失败
- **实现描述:
- **注意事项:
- **作    者: # Qifeng.zou # 2015.01.14 #
- ******************************************************************************/
-static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx)
-{
-    sdk_cmd_t cmd;
-    char path[FILE_NAME_MAX_LEN];
-    sdk_conf_t *conf = &ctx->conf;
-
-    memset(&cmd, 0, sizeof(cmd));
-
-    cmd.type = SDK_CMD_SEND_ALL;
-    sdk_ssvr_usck_path(conf, path);
-
-    if (spin_trylock(&ctx->cmd_sck_lck)) {
-        log_debug(ctx->log, "Try lock failed!");
-        return SDK_OK;
-    }
-
-    if (unix_udp_send(ctx->cmd_sck_id, path, &cmd, sizeof(cmd)) < 0) {
-        spin_unlock(&ctx->cmd_sck_lck);
-        if (EAGAIN != errno) {
-            log_debug(ctx->log, "errmsg:[%d] %s! path:%s", errno, strerror(errno), path);
-        }
-        return SDK_ERR;
-    }
-
-    spin_unlock(&ctx->cmd_sck_lck);
 
     return SDK_OK;
 }
@@ -375,7 +240,7 @@ static int sdk_cli_cmd_send_req(sdk_cntx_t *ctx)
  **     3. 只要SSVR未处于未上线成功的状态, 则认为联网失败.
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
-int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
+int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
         const void *data, size_t size, int timeout, sdk_send_cb_t cb, void *param)
 {
     void *addr;
@@ -385,7 +250,7 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
 
     /* > 判断网络是否正常 */
     if (!ssvr->is_online_succ) {
-        cb(cmd, data, size, SDK_STAT_SEND_FAIL, param);
+        cb(cmd, data, size, NULL, 0, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "Network is still disconnect!");
         return SDK_ERR_NETWORK_DISCONN; /* 网络已断开 */
     }
@@ -393,7 +258,7 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
     /* > 申请内存空间 */
     addr = (void *)calloc(1, sizeof(mesg_header_t)+size);
     if (NULL == addr) {
-        cb(cmd, data, size, SDK_STAT_SEND_FAIL, param);
+        cb(cmd, data, size, NULL, 0, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "Alloc memory [%d] failed! errmsg:[%d] %s!",
                 size+sizeof(mesg_header_t), errno, strerror(errno));
         return SDK_ERR;
@@ -417,7 +282,7 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
     /* > 设置发送单元 */
     item = (sdk_send_item_t *)calloc(1, sizeof(sdk_send_item_t));
     if (NULL == item) {
-        cb(cmd, data, size, SDK_STAT_SEND_FAIL, param);
+        cb(cmd, data, size, NULL, 0, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
         FREE(head);
         return SDK_ERR;
@@ -434,7 +299,7 @@ int sdk_async_send(sdk_cntx_t *ctx, int cmd, uint64_t to,
 
     /* > 放入管理表 */
     if (sdk_send_mgr_insert(ctx, item)) {
-        cb(cmd, data, size, SDK_STAT_SEND_FAIL, param);
+        cb(cmd, data, size, NULL, 0, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "Insert send mgr tab failed!");
         FREE(addr);
         FREE(item);

@@ -543,7 +543,10 @@ static int sdk_ssvr_data_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sct_t *sck)
         }
 
         /* > 收到应答处理 */
-        sdk_ack_succ_hdl(ctx, head->seq);
+        if (sdk_ack_succ_hdl(ctx, head->seq, recv->optr)) {
+            recv->optr += mesg_len;
+            continue;
+        }
 
         /* 2.3 如果是系统消息 */
         if (sdk_is_sys_mesg(head->cmd)) {

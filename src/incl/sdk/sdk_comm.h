@@ -129,4 +129,28 @@ static inline int sdk_reg_cmp_cb(const sdk_reg_t *reg1, const sdk_reg_t *reg2)
     return (reg1->cmd - reg2->cmd);
 }
 
+/* 命令项 */
+typedef struct
+{
+    uint16_t ack;                           /* "应答"命令 */
+    uint16_t req;                           /* 对应的"请求"命令 */
+} sdk_cmd_ack_t;
+
+/******************************************************************************
+ **函数名称: sdk_ack_cmp_cb
+ **功    能: 命令比较函数回调
+ **输入参数:
+ **     cmd1: 命令项1
+ **     cmd2: 命令项2
+ **输出参数:
+ **返    回: 0:相等 <0:小于 >0:大于
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2016.11.10 16:37:13 #
+ ******************************************************************************/
+static inline int sdk_ack_cmp_cb(const sdk_cmd_ack_t *cmd1, const sdk_cmd_ack_t *cmd2)
+{
+    return (cmd1->ack - cmd2->ack);
+}
+
 #endif /*__SDK_COMM_H__*/

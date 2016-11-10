@@ -3,6 +3,191 @@
 #include "rb_tree.h"
 
 /******************************************************************************
+ **函数名称: sdk_creat_workers
+ **功    能: 创建工作线程线程池
+ **输入参数:
+ **     ctx: 全局对象
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2015.08.19 #
+ ******************************************************************************/
+int sdk_creat_workers(sdk_cntx_t *ctx)
+{
+    int idx;
+    sdk_worker_t *worker;
+    sdk_conf_t *conf = &ctx->conf;
+
+    /* > 创建对象 */
+    worker = (sdk_worker_t *)calloc(conf->work_thd_num, sizeof(sdk_worker_t));
+    if (NULL == worker) {
+        return SDK_ERR;
+    }
+
+    /* > 创建线程池 */
+    ctx->worktp = thread_pool_init(conf->work_thd_num, NULL, (void *)worker);
+    if (NULL == ctx->worktp) {
+        free(worker);
+        return SDK_ERR;
+    }
+
+    /* > 初始化线程 */
+    for (idx=0; idx<conf->work_thd_num; ++idx) {
+        if (sdk_worker_init(ctx, worker+idx, idx)) {
+            free(worker);
+            thread_pool_destroy(ctx->worktp);
+            return SDK_ERR;
+        }
+    }
+
+    return SDK_OK;
+}
+
+/******************************************************************************
+ **函数名称: sdk_creat_sends
+ **功    能: 创建发送线程线程池
+ **输入参数:
+ **     ctx: 全局对象
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2015.08.19 #
+ ******************************************************************************/
+int sdk_creat_sends(sdk_cntx_t *ctx)
+{
+    /* > 创建对象 */
+    ctx->ssvr = (sdk_ssvr_t *)calloc(1, sizeof(sdk_ssvr_t));
+    if (NULL == ctx->ssvr) {
+        log_error(ctx->log, "errmsg:[%d] %s!", errno, strerror(errno));
+        return SDK_ERR;
+    }
+
+    /* > 创建线程池 */
+    ctx->sendtp = thread_pool_init(1, NULL, (void *)ctx->ssvr);
+    if (NULL == ctx->sendtp) {
+        log_error(ctx->log, "Initialize thread pool failed!");
+        FREE(ctx->ssvr);
+        return SDK_ERR;
+    }
+
+    /* > 初始化线程 */
+    if (sdk_ssvr_init(ctx, ctx->ssvr)) {
+        log_fatal(ctx->log, "Initialize send thread failed!");
+        FREE(ctx->ssvr);
+        thread_pool_destroy(ctx->sendtp);
+        return SDK_ERR;
+    }
+
+    return SDK_OK;
+}
+
+/******************************************************************************
+ **函数名称: sdk_lock_server
+ **功    能: 锁住指定路径(注: 防止路径和结点ID相同的配置)
+ **输入参数:
+ **     conf: 配置信息
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项: 文件描述符可不用关闭
+ **作    者: # Qifeng.zou # 2016.05.02 21:14:39 #
+ ******************************************************************************/
+int sdk_lock_server(const sdk_conf_t *conf)
+{
+    int fd;
+    char path[FILE_NAME_MAX_LEN];
+
+    sdk_lock_path(conf, path);
+
+    Mkdir2(path, DIR_MODE);
+
+    fd = Open(path, O_CREAT|O_RDWR, OPEN_MODE);
+    if (fd < 0) {
+        return -1;
+    }
+
+    if (proc_try_wrlock(fd)) {
+        close(fd);
+        return -1;
+    }
+    return 0;
+}
+
+/******************************************************************************
+ **函数名称: sdk_cli_cmd_send_req
+ **功    能: 通知Send服务线程
+ **输入参数:
+ **     ctx: 上下文信息
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2015.01.14 #
+ ******************************************************************************/
+int sdk_cli_cmd_send_req(sdk_cntx_t *ctx)
+{
+    sdk_cmd_t cmd;
+    char path[FILE_NAME_MAX_LEN];
+    sdk_conf_t *conf = &ctx->conf;
+
+    memset(&cmd, 0, sizeof(cmd));
+
+    cmd.type = SDK_CMD_SEND_ALL;
+    sdk_ssvr_usck_path(conf, path);
+
+    if (spin_trylock(&ctx->cmd_sck_lck)) {
+        log_debug(ctx->log, "Try lock failed!");
+        return SDK_OK;
+    }
+
+    if (unix_udp_send(ctx->cmd_sck_id, path, &cmd, sizeof(cmd)) < 0) {
+        spin_unlock(&ctx->cmd_sck_lck);
+        if (EAGAIN != errno) {
+            log_debug(ctx->log, "errmsg:[%d] %s! path:%s", errno, strerror(errno), path);
+        }
+        return SDK_ERR;
+    }
+
+    spin_unlock(&ctx->cmd_sck_lck);
+
+    return SDK_OK;
+}
+
+/******************************************************************************
+ **函数名称: sdk_creat_cmd_usck
+ **功    能: 创建命令套接字
+ **输入参数:
+ **     ctx: 上下文信息
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2015.01.14 #
+ ******************************************************************************/
+int sdk_creat_cmd_usck(sdk_cntx_t *ctx)
+{
+    char path[FILE_NAME_MAX_LEN];
+
+    sdk_comm_usck_path(&ctx->conf, path);
+
+    spin_lock_init(&ctx->cmd_sck_lck);
+    ctx->cmd_sck_id = unix_udp_creat(path);
+    if (ctx->cmd_sck_id < 0) {
+        log_error(ctx->log, "errmsg:[%d] %s! path:%s", errno, strerror(errno), path);
+        return SDK_ERR;
+    }
+
+    return SDK_OK;
+}
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+
+/******************************************************************************
  **函数名称: sdk_queue_init
  **功    能: 队列初始化(内部接口)
  **输入参数:
@@ -276,7 +461,7 @@ static int sdk_send_item_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
             sdk_queue_remove(&ctx->sendq, item->data);
             item->stat = SDK_STAT_SEND_TIMEOUT; /* 发送超时 */
             if (item->cb) {
-                item->cb(item->cmd, data, item->len, item->stat, item->param);
+                item->cb(item->cmd, data, item->len, NULL, 0, item->stat, item->param);
             }
             FREE(item->data);
             FREE(item);
@@ -288,7 +473,7 @@ static int sdk_send_item_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
             rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
             item->stat = SDK_STAT_ACK_TIMEOUT;
             if (item->cb) {
-                item->cb(item->cmd, data, item->len, item->stat, item->param);
+                item->cb(item->cmd, data, item->len, NULL, 0, item->stat, item->param);
             }
             FREE(item->data);
             FREE(item);
@@ -297,7 +482,7 @@ static int sdk_send_item_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
             key.seq = item->seq;
             rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
             if (item->cb) {
-                item->cb(item->cmd, data, item->len, item->stat, item->param);
+                item->cb(item->cmd, data, item->len, NULL, 0, item->stat, item->param);
             }
             FREE(item->data);
             FREE(item);
@@ -306,7 +491,7 @@ static int sdk_send_item_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
             key.seq = item->seq;
             rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
             if (item->cb) {
-                item->cb(item->cmd, data, item->len, item->stat, item->param);
+                item->cb(item->cmd, data, item->len, NULL, 0, item->stat, item->param);
             }
             FREE(item->data);
             FREE(item);
@@ -315,7 +500,7 @@ static int sdk_send_item_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
             key.seq = item->seq;
             rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
             if (item->cb) {
-                item->cb(item->cmd, data, item->len, item->stat, item->param);
+                item->cb(item->cmd, data, item->len, NULL, 0, item->stat, item->param);
             }
             FREE(item->data);
             FREE(item);
@@ -324,7 +509,7 @@ static int sdk_send_item_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
             key.seq = item->seq;
             rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
             if (item->cb) {
-                item->cb(item->cmd, data, item->len, item->stat, item->param);
+                item->cb(item->cmd, data, item->len, NULL, 0, item->stat, item->param);
             }
             FREE(item->data);
             FREE(item);
@@ -373,6 +558,8 @@ int sdk_trav_send_item(sdk_cntx_t *ctx)
         return 0; /* 未超时 */
     }
 
+    log_debug(ctx->log, "Trav send item table!");
+
     list = list_creat(NULL);
     if (NULL == list) {
         log_error(ctx->log, "Create timeout list failed!");
@@ -381,6 +568,7 @@ int sdk_trav_send_item(sdk_cntx_t *ctx)
 
     pthread_rwlock_wrlock(&mgr->lock);
     rbt_trav(mgr->tab, (trav_cb_t)sdk_send_mgr_trav_timeout_cb, (void *)list);
+    mgr->trav_tm = time(NULL);
     while (1) {
         item = list_lpop(list);
         if (NULL == item) {
@@ -468,7 +656,7 @@ int sdk_send_mgr_unlock(sdk_cntx_t *ctx, lock_e lock)
  ******************************************************************************/
 int sdk_send_succ_hdl(sdk_cntx_t *ctx, void *addr, size_t len)
 {
-    int cmd;
+    uint16_t cmd;
     void *data;
     uint64_t seq;
     sdk_send_item_t *item;
@@ -485,7 +673,7 @@ int sdk_send_succ_hdl(sdk_cntx_t *ctx, void *addr, size_t len)
     item->stat = SDK_STAT_SEND_SUCC;
     if (item->cb) {
         data = (void *)(head + 1);
-        item->cb(cmd, data, item->len, item->stat, item->param);
+        item->cb(cmd, data, item->len, NULL, 0, item->stat, item->param);
     }
 
     sdk_send_mgr_unlock(ctx, WRLOCK);
@@ -507,7 +695,7 @@ int sdk_send_succ_hdl(sdk_cntx_t *ctx, void *addr, size_t len)
  ******************************************************************************/
 int sdk_send_fail_hdl(sdk_cntx_t *ctx, void *addr, size_t len)
 {
-    int cmd;
+    uint16_t cmd;
     void *data;
     uint64_t seq;
     sdk_send_item_t *item;
@@ -525,7 +713,7 @@ int sdk_send_fail_hdl(sdk_cntx_t *ctx, void *addr, size_t len)
     item->stat = SDK_STAT_SEND_FAIL;
     if (item->cb) {
         data = (void *)(head + 1);
-        item->cb(cmd, data, item->len, item->stat, item->param);
+        item->cb(cmd, data, item->len, NULL, 0, item->stat, item->param);
     }
 
     sdk_send_mgr_unlock(ctx, WRLOCK);
@@ -558,7 +746,7 @@ bool sdk_send_timeout_hdl(sdk_cntx_t *ctx, void *addr)
     if (time(NULL) >= item->ttl) {
         if (item->cb) {
             data = (void *)(head + 1);
-            item->cb(head->cmd, data, head->len, SDK_STAT_SEND_TIMEOUT, item->param);
+            item->cb(head->cmd, data, head->len, NULL, 0, SDK_STAT_SEND_TIMEOUT, item->param);
         }
         item->stat = SDK_STAT_SEND_TIMEOUT;
         sdk_send_mgr_unlock(ctx, WRLOCK);
@@ -579,31 +767,46 @@ bool sdk_send_timeout_hdl(sdk_cntx_t *ctx, void *addr)
  **     ctx: 全局对象
  **     seq: 序列号
  **输出参数: NONE
- **返    回: 0:成功 !0:失败
+ **返    回: true:已处理 false:未处理
  **实现描述: 
  **注意事项: 此时协议头依然为网络字节序
  **作    者: # Qifeng.zou # 2016.11.10 11:48:21 #
  ******************************************************************************/
-int sdk_ack_succ_hdl(sdk_cntx_t *ctx, uint64_t seq)
+bool sdk_ack_succ_hdl(sdk_cntx_t *ctx, uint64_t seq, void *ack)
 {
     void *data;
     sdk_send_item_t key, *item;
     sdk_send_mgr_t *mgr = &ctx->mgr;
+    sdk_cmd_ack_t ack_key, *ack_item;
+    mesg_header_t *head = (mesg_header_t *)ack;
+
+    ack_key.ack = head->cmd;
+
+    ack_item = avl_query(ctx->cmd, &ack_key);
+    if (NULL == ack_item) {
+        return false;
+    }
 
     key.seq = seq;
 
     pthread_rwlock_wrlock(&mgr->lock);
-    rbt_delete(mgr->tab, (void *)&key, (void **)&item);
-    pthread_rwlock_unlock(&mgr->lock);
+    item = rbt_query(mgr->tab, (void *)&key);
     if (NULL == item) {
-        return -1;
+        pthread_rwlock_unlock(&mgr->lock);
+        return false;
     }
+    else if (item->cmd == ack_item->req) {
+        rbt_delete(mgr->tab, (void *)&key, (void **)&item);
+    }
+    pthread_rwlock_unlock(&mgr->lock);
 
     data = (void *)(item->data + sizeof(mesg_header_t));
-    item->cb(item->cmd, data, item->len, SDK_STAT_ACK_SUCC, item->param);
+    item->cb(item->cmd, data, item->len,
+            ack + sizeof(mesg_header_t), head->len,
+            SDK_STAT_ACK_SUCC, item->param);
 
     free(item->data);
     free(item);
 
-    return false;
+    return true;
 }
