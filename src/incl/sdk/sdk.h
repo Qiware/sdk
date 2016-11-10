@@ -152,7 +152,7 @@ sdk_cntx_t *sdk_init(const sdk_conf_t *conf);
 int sdk_cmd_add(sdk_cntx_t *ctx, uint16_t cmd, uint16_t ack);
 int sdk_register(sdk_cntx_t *ctx, uint16_t cmd, sdk_reg_cb_t proc, void *args);
 int sdk_launch(sdk_cntx_t *ctx);
-int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to, const void *data, size_t size, int timeout, sdk_send_cb_t cb, void *param);
+uint32_t sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to, const void *data, size_t size, int timeout, sdk_send_cb_t cb, void *param);
 int sdk_network_switch(sdk_cntx_t *ctx, int status);
 
 #endif /*__SDK_PROXY_H__*/

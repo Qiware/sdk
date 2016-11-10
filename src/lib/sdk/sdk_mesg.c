@@ -69,6 +69,7 @@ int sdk_mesg_send_ping_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     log_debug(ssvr->log, "Add ping request success!");
 
     ++sck->kpalive_times;
+    sck->last_kpalive_tm = time(NULL);
     sdk_set_kpalive_stat(sck, SDK_KPALIVE_STAT_SENT);
     return SDK_OK;
 }

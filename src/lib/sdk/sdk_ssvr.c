@@ -339,6 +339,8 @@ static int sdk_ssvr_reconn(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 
     sdk_ssvr_clear_mesg(ssvr);
 
+    ssvr->last_conn_tm = time(NULL);
+
     if (NULL == list_find(info->iplist, (find_cb_t)sdk_ssvr_try_reconn, (void *)ssvr)) {
         sdk_ssvr_update_sleep_sec(ssvr);
         return SDK_ERR;
@@ -368,7 +370,7 @@ static int sdk_ssvr_reconn(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
  ******************************************************************************/
 static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
-    time_t curr_tm = time(NULL);
+    time_t diff, tm = time(NULL);
     sdk_sct_t *sck = &ssvr->sck;
 
     sdk_trav_send_item(ctx);
@@ -379,7 +381,8 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     }
 
     /* 1. 判断是否长时无数据 */
-    if ((curr_tm - sck->wrtm) < SDK_KPALIVE_INTV) {
+    diff = tm - sck->last_kpalive_tm;
+    if (diff < SDK_KPALIVE_INTV) {
         return SDK_OK;
     }
 
@@ -388,8 +391,6 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
         log_error(ssvr->log, "Connection keepalive failed!");
         return SDK_ERR;
     }
-
-    sck->wrtm = curr_tm;
 
     return SDK_OK;
 }

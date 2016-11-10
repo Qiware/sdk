@@ -38,6 +38,7 @@ typedef struct
 #define SDK_KPALIVE_STAT_SUCC      (2) /* 保活成功 */
     int kpalive;                        /* 保活状态(0:未知 1:已发送 2:保活成功) */
     int kpalive_times;                  /* 保活次数 */
+    time_t last_kpalive_tm;             /* 上次发送保活请求的时间 */
     list_t *mesg_list;                  /* 发送链表 */
 
     sdk_snap_t recv;                   /* 接收快照 */
@@ -71,6 +72,7 @@ typedef struct
     fd_set rset;                        /* 读集合 */
     fd_set wset;                        /* 写集合 */
 
+    time_t last_conn_tm;                /* 上一次尝试连接的时间(通过此值控制重连的频率) */
     bool is_online_succ;                /* 上线是否成功 */
     sdk_conn_info_t conn_info;          /* CONN INFO信息 */
 

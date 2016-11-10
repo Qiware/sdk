@@ -220,7 +220,7 @@ int sdk_register(sdk_cntx_t *ctx, uint16_t cmd, sdk_reg_cb_t proc, void *param)
  **     cb: 该包发送结果回调(成功/失败/超时)
  **     param: 回调附加参数
  **输出参数: NONE
- **返    回: 0:成功 !0:失败
+ **返    回: 发送包的序列号(-1:失败)
  **实现描述: 将数据按照约定格式放入队列中
  **     {
  **         uint16_t cmd;       // 协议类型，命令ID,定义规则：奇数是请求，偶数是应答
@@ -240,10 +240,11 @@ int sdk_register(sdk_cntx_t *ctx, uint16_t cmd, sdk_reg_cb_t proc, void *param)
  **     3. 只要SSVR未处于未上线成功的状态, 则认为联网失败.
  **作    者: # Qifeng.zou # 2015.01.14 #
  ******************************************************************************/
-int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
+uint32_t sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
         const void *data, size_t size, int timeout, sdk_send_cb_t cb, void *param)
 {
     void *addr;
+    uint32_t seq;
     mesg_header_t *head;
     sdk_send_item_t *item;
     sdk_ssvr_t *ssvr = ctx->ssvr;
@@ -252,8 +253,10 @@ int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
     if (!ssvr->is_online_succ) {
         cb(cmd, data, size, NULL, 0, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "Network is still disconnect!");
-        return SDK_ERR_NETWORK_DISCONN; /* 网络已断开 */
+        return -1; /* 网络已断开 */
     }
+
+    seq = sdk_gen_seq(ctx);
 
     /* > 申请内存空间 */
     addr = (void *)calloc(1, sizeof(mesg_header_t)+size);
@@ -261,7 +264,7 @@ int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
         cb(cmd, data, size, NULL, 0, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "Alloc memory [%d] failed! errmsg:[%d] %s!",
                 size+sizeof(mesg_header_t), errno, strerror(errno));
-        return SDK_ERR;
+        return -1;
     }
 
     /* > 设置发送数据 */
@@ -272,7 +275,7 @@ int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
     head->len = size;
     head->from = ctx->sid;
     head->to = to;
-    head->seq = sdk_gen_seq(ctx);
+    head->seq = seq;
 
     memcpy(head+1, data, size);
 
@@ -288,7 +291,7 @@ int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
         return SDK_ERR;
     }
 
-    item->seq = head->seq;
+    item->seq = seq;
     item->stat = SDK_STAT_IN_SENDQ;
     item->cmd = cmd;
     item->len = size;
@@ -303,7 +306,7 @@ int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
         log_error(ctx->log, "Insert send mgr tab failed!");
         FREE(addr);
         FREE(item);
-        return SDK_ERR;
+        return -1;
     }
 
     /* > 放入发送队列 */
@@ -312,7 +315,7 @@ int sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
     /* > 通知发送线程 */
     sdk_cli_cmd_send_req(ctx);
 
-    return SDK_OK;
+    return seq;
 }
 
 /******************************************************************************
