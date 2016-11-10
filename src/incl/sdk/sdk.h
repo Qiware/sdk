@@ -14,13 +14,14 @@
 /* 发送状态 */
 typedef enum
 {
-    SDK_STAT_IN_SENDQ                   /* 发送队列中... */
-    , SDK_STAT_SENDING                  /* 正在发送... */
-    , SDK_STAT_SEND_SUCC                /* 发送成功 */
-    , SDK_STAT_SEND_FAIL                /* 发送失败 */
-    , SDK_STAT_SEND_TIMEOUT             /* 发送超时 */
-    , SDK_STAT_ACK_SUCC                 /* 应答成功 */
-    , SDK_STAT_ACK_TIMEOUT              /* 应答超时 */
+    SDK_STAT_UNKNOWN       = 0          /* 未知状态 */
+    , SDK_STAT_IN_SENDQ     = 1         /* 发送队列中... */
+    , SDK_STAT_SENDING      = 2         /* 正在发送... */
+    , SDK_STAT_SEND_SUCC    = 3         /* 发送成功 */
+    , SDK_STAT_SEND_FAIL    = 4         /* 发送失败 */
+    , SDK_STAT_SEND_TIMEOUT = 5         /* 发送超时 */
+    , SDK_STAT_ACK_SUCC     = 6         /* 应答成功 */
+    , SDK_STAT_ACK_TIMEOUT  = 7         /* 应答超时 */
 } sdk_send_stat_e;
 
 /* 发送结果回调

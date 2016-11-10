@@ -487,6 +487,7 @@ static int sdk_send_item_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
             FREE(item->data);
             FREE(item);
             return SDK_OK;
+        case SDK_STAT_UNKNOWN:
         case SDK_STAT_SEND_TIMEOUT:
             key.seq = item->seq;
             rbt_delete(mgr->tab, (void *)&key, (void **)&temp);
