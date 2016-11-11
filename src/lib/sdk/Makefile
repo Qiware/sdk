@@ -31,7 +31,6 @@ SRC_LIST = ./sdk.c \
 		   ./sdk_worker.c \
 		   ./core/str.c \
 		   ./core/log.c \
-		   ./core/logsvr.c \
 		   ./core/redo.c \
 		   ./core/list.c \
 		   ./core/list2.c \

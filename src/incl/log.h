@@ -32,7 +32,7 @@ typedef enum
 #define LOG_SYNC_TIMEOUT        (1)         /* 日志超时同步时间 */
 
 #define LOG_MSG_MAX_LEN         (2048)      /* 日志行最大长度 */
-#define LOG_MAX_SIZE            (128 * MB)  /* 单个日志文件的最大SIZE */
+#define LOG_MAX_SIZE            (4 * MB)    /* 单个日志文件的最大SIZE */
 
 #define LOG_SUFFIX              ".log"      /* 日志文件后缀 */
 
@@ -59,7 +59,6 @@ typedef struct
 typedef struct _log_cycle_t
 {
     int level;                              /* 日志级别 */
-    log_svr_t *owner;                       /* 所属服务 */
     char path[FILE_NAME_MAX_LEN];           /* 日志文件绝对路径 */
 
     pid_t pid;                              /* 进程PID */
@@ -112,7 +111,6 @@ void log_core(log_cycle_t *log, int level,
         log_core(log, LOG_LEVEL_TRACE, __FILE__, __LINE__, __func__, addr, len, __VA_ARGS__)
 
 /* 内部接口 */
-int log_insert(log_svr_t *lsvr, log_cycle_t *log);
 int log_sync(log_cycle_t *log);
 
 extern size_t g_log_max_size;

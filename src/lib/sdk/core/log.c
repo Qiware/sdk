@@ -17,6 +17,8 @@ size_t g_log_max_size = LOG_MAX_SIZE;
 static int log_write(log_cycle_t *log, int level,
         const void *dump, int dumplen, const char *msg, const struct timeb *ctm);
 static int log_print_dump(char *addr, const void *dump, int dumplen);
+static size_t log_sync_to_disk(log_cycle_t *log);
+static int log_rename(const log_cycle_t *log, const struct timeb *time);
 
 /******************************************************************************
  **函数名称: log_init
@@ -32,16 +34,9 @@ static int log_print_dump(char *addr, const void *dump, int dumplen);
  ******************************************************************************/
 log_cycle_t *log_init(int level, const char *path)
 {
-    log_svr_t *lsvr;
     log_cycle_t *log;
 
     Mkdir2(path, DIR_MODE);
-
-    /* > 新建日志服务 */
-    lsvr = log_svr_init();
-    if (NULL == lsvr) {
-        return NULL;
-    }
 
     /* > 新建日志对象 */
     log = (log_cycle_t *)calloc(1, sizeof(log_cycle_t));
@@ -49,7 +44,6 @@ log_cycle_t *log_init(int level, const char *path)
         return NULL;
     }
 
-    log->owner = lsvr;
     log->level = level;
     log->pid = getpid();
     pthread_mutex_init(&log->lock, NULL);
@@ -72,8 +66,6 @@ log_cycle_t *log_init(int level, const char *path)
             fprintf(stderr, "errmsg:[%d] %s! path:[%s]", errno, strerror(errno), path);
             break;
         }
-
-        log_insert(lsvr, log);
 
 	    return log;
     } while (0);
@@ -329,10 +321,8 @@ static int log_write(log_cycle_t *log, int level,
     }
 
     /* 判断是否强制同步 */
-    if (left <= 0.8 * log->size) {
-        memcpy(&log->sync_tm, ctm, sizeof(log->sync_tm));
-        log_sync(log);
-    }
+    memcpy(&log->sync_tm, ctm, sizeof(log->sync_tm));
+    log_sync(log);
 
     pthread_mutex_unlock(&log->lock);
 
@@ -416,4 +406,134 @@ static int log_print_dump(char *addr, const void *dump, int dumplen)
     } /* dump_end of while    */
 
     return (in - addr);
+}
+
+/******************************************************************************
+ **函数名称: log_sync
+ **功    能: 强制同步日志信息到日志文件
+ **输入参数:
+ **     log: 日志对象
+ **输出参数: NONE
+ **返    回: VOID
+ **实现描述:
+ **注意事项: 请在函数外部加锁
+ **作    者: # Qifeng.zou # 2013.10.30 #
+ ******************************************************************************/
+int log_sync(log_cycle_t *log)
+{
+    size_t sz;
+
+    /* 1. 执行同步操作 */
+    sz = log_sync_to_disk(log);
+
+    /* 2. 文件是否过大 */
+    if (log_is_too_large(sz)) {
+        CLOSE(log->fd);
+        return log_rename(log, &log->sync_tm);
+    }
+
+    return 0;
+}
+
+/******************************************************************************
+ **函数名称: log_sync_to_disk
+ **功    能: 强制日志到磁盘
+ **输入参数:
+ **     log: 日志对象
+ **输出参数: NONE
+ **返    回: 如果进行同步操作，则返回文件的实际大小!
+ **实现描述:
+ **注意事项:
+ **     1) 一旦撰写日志失败，需要清除缓存中的日志，防止内存溢出，导致严重后果!
+ **     2) 当fd为空指针时，打开的文件需要关闭.
+ **     3) 在此函数中不允许调用错误级别的日志函数 可能死锁!
+ **作    者: # Qifeng.zou # 2013.11.08 #
+ ******************************************************************************/
+static size_t log_sync_to_disk(log_cycle_t *log)
+{
+    void *addr;
+    struct stat st;
+    int n, sz = 0;
+
+    /* 1. 判断是否需要同步 */
+    if (log->inoff == log->outoff) {
+        return 0;
+    }
+
+    /* 2. 计算同步地址和长度 */
+    addr = log->text;
+    n = log->inoff - log->outoff;
+
+    /* 撰写日志文件 */
+    do {
+        /* 3. 文件是否存在 */
+        if (lstat(log->path, &st) < 0) {
+            if (ENOENT != errno) {
+                fprintf(stderr, "errmsg:[%d] %s! path:[%s]\n", errno, strerror(errno), log->path);
+                CLOSE(log->fd);
+                break;
+            }
+            CLOSE(log->fd);
+            Mkdir2(log->path, DIR_MODE);
+        }
+
+        /* 4. 是否重新创建文件 */
+        if (log->fd < 0) {
+            log->fd = Open(log->path, OPEN_FLAGS, OPEN_MODE);
+            if (log->fd < 0) {
+                fprintf(stderr, "errmsg:[%d] %s! path:[%s]\n", errno, strerror(errno), log->path);
+                break;
+            }
+        }
+
+        /* 5. 定位到文件末尾 */
+        sz = lseek(log->fd, 0, SEEK_END);
+        if (-1 == sz) {
+            CLOSE(log->fd);
+            fprintf(stderr, "errmsg:[%d] %s! path:[%s]\n", errno, strerror(errno), log->path);
+            break;
+        }
+
+        /* 6. 写入指定日志文件 */
+        Writen(log->fd, addr, n);
+
+        sz += n;
+    } while(0);
+
+    /* 7. 标志复位 */
+    memset(addr, 0, n);
+    log->inoff = 0;
+    log->outoff = 0;
+    ftime(&log->sync_tm);
+
+    return sz;
+}
+
+/******************************************************************************
+ **函数名称: log_rename
+ **功    能: 获取备份日志文件名
+ **输入参数:
+ **     log: 日志对象
+ **     time: 当前时间
+ **输出参数: NONE
+ **返    回: 0:成功 !0:失败
+ **实现描述:
+ **注意事项:
+ **作    者: # Qifeng.zou # 2013.10.31 #
+ ******************************************************************************/
+static int log_rename(const log_cycle_t *log, const struct timeb *time)
+{
+    struct tm loctm;
+    char newpath[FILE_PATH_MAX_LEN];
+
+    local_time(&time->time, &loctm);
+
+    /* FORMAT: *.logYYYYMMDDHHMMSS.bak */
+    snprintf(newpath, sizeof(newpath),
+        "%s%04d%02d%02d%02d%02d%02d.bak",
+        log->path, loctm.tm_year+1900, loctm.tm_mon+1, loctm.tm_mday,
+        loctm.tm_hour, loctm.tm_min, loctm.tm_sec);
+
+    return remove(log->path);
+    //return rename(log->path, newpath);
 }
