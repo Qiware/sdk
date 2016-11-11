@@ -283,7 +283,7 @@ void *sdk_ssvr_routine(void *_ctx)
             sdk_ssvr_recv_proc(ctx, ssvr);
         }
 
-        sdk_send_mgr_trav(ctx);
+        sdk_ssvr_timeout_hdl(ctx, ssvr);
     }
 
     abort();
