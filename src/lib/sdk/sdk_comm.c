@@ -563,6 +563,8 @@ int sdk_send_mgr_trav(sdk_cntx_t *ctx)
 
     log_debug(ctx->log, "Trav send item table!");
 
+    mgr->next_trav_tm = time(NULL) + SDK_SLEEP_MAX_SEC;
+
     list = list_creat(NULL);
     if (NULL == list) {
         log_error(ctx->log, "Create timeout list failed!");
@@ -583,7 +585,6 @@ int sdk_send_mgr_trav(sdk_cntx_t *ctx)
     list_destroy(list, NULL, mem_dummy_dealloc);
 
     /* > 查找下一个超时时间 */
-    mgr->next_trav_tm = time(NULL) + SDK_SLEEP_MAX_SEC;
     rbt_trav(mgr->tab, (trav_cb_t)sdk_send_mgr_find_timeout_cb, (void *)&mgr->next_trav_tm);
 
     pthread_rwlock_unlock(&mgr->lock);

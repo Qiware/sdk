@@ -9,6 +9,7 @@
 
 #define SDK_PING_MIN_SEC    (5)
 #define SDK_PING_MAX_SEC    (300)
+#define SDK_CONN_MAX_SEC    (300)
 #define SDK_SLEEP_MAX_SEC   (300)
 
 /* COMM的UNIX-UDP路径 */
@@ -83,5 +84,8 @@ typedef struct
     uint64_t err_total;                 /* 错误的数据条数 */
     uint64_t drop_total;                /* 丢弃的数据条数 */
 } sdk_ssvr_t;
+
+#define SDK_SSVR_SET_ONLINE(ssvr, ok) ((ssvr)->is_online_succ = (ok))
+#define SDK_SSVR_GET_ONLINE(ssvr) ((ssvr)->is_online_succ)
 
 #endif /*__SDK_SSVR_H__*/

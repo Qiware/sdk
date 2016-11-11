@@ -127,7 +127,7 @@ int sdk_mesg_send_online_req(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
         return SDK_ERR;
     }
 
-    ssvr->is_online_succ = false;
+    SDK_SSVR_SET_ONLINE(ssvr, false);
 
     log_debug(ssvr->log, "Add online request success!");
 
@@ -265,7 +265,7 @@ int sdk_mesg_online_ack_handler(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, sdk_sck_t *sc
         return SDK_ERR;
     }
 
-    ssvr->is_online_succ = (ack->has_code && (0 == ack->code))? true : false;
+    SDK_SSVR_SET_ONLINE(ssvr, ((ack->has_code && (0 == ack->code))? true : false));
 
     log_debug(ctx->log, "code:%d msg:%s", ack->code, ack->msg);
 

@@ -320,18 +320,20 @@ static sdk_ssvr_t *sdk_ssvr_get_curr(sdk_cntx_t *ctx)
 /* 连接后的处理 */
 static int sdk_ssvr_conn_after_hdl(sdk_ssvr_t *ssvr, bool succ)
 {
-#define SDK_CONN_MAX_SEC    (300)
     time_t intv, tm = time(NULL);
 
     if (succ) { // 成功
         ssvr->try_conn_times = 0;
         ssvr->next_conn_tm = tm + SDK_CONN_MAX_SEC;
+        SDK_SSVR_SET_ONLINE(ssvr, true);
     }
     else { // 失败
         ++ssvr->try_conn_times;
+        SDK_SSVR_SET_ONLINE(ssvr, false);
         intv = pow(4, ssvr->try_conn_times);
         if (intv > SDK_CONN_MAX_SEC) {
             intv = SDK_CONN_MAX_SEC;
+            ssvr->try_conn_times = 5;
         }
         ssvr->next_conn_tm = tm + intv;
     }
@@ -494,7 +496,7 @@ static int sdk_ssvr_recv_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 
                 CLOSE(sck->fd);
                 sdk_snap_reset(recv);
-                ssvr->is_online_succ = false;
+                SDK_SSVR_SET_ONLINE(ssvr, false);
                 return SDK_ERR;
             }
             continue;
@@ -502,7 +504,7 @@ static int sdk_ssvr_recv_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
         else if (0 == n) {
             log_info(ssvr->log, "Server disconnected. fd:%d n:%d/%d", sck->fd, n, left);
             CLOSE(sck->fd);
-            ssvr->is_online_succ = false;
+            SDK_SSVR_SET_ONLINE(ssvr, false);
             sdk_snap_reset(recv);
             return SDK_SCK_DISCONN;
         }
@@ -517,7 +519,7 @@ static int sdk_ssvr_recv_proc(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 
         CLOSE(sck->fd);
         sdk_snap_reset(recv);
-        ssvr->is_online_succ = false;
+        SDK_SSVR_SET_ONLINE(ssvr, false);
         return SDK_ERR;
     }
 
@@ -680,16 +682,16 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
             log_debug(ssvr->log, "Network connected! type:[%d]", cmd->type);
             CLOSE(sck->fd);
             wiov_clean(send);
-            ssvr->next_conn_tm = 0;
-            ssvr->is_online_succ = false;
+            ssvr->next_conn_tm = time(NULL);
+            SDK_SSVR_SET_ONLINE(ssvr, false);
             return SDK_OK;
         case SDK_CMD_NETWORK_DISCONN:
             log_debug(ssvr->log, "Network disconnect! type:[%d]", cmd->type);
             CLOSE(sck->fd);
             CLOSE(sck->fd);
             wiov_clean(send);
-            ssvr->next_conn_tm = 0;
-            ssvr->is_online_succ = false;
+            ssvr->next_conn_tm = time(NULL);
+            SDK_SSVR_SET_ONLINE(ssvr, false);
             return SDK_OK;
         default:
             log_error(ssvr->log, "Unknown command! type:[%d]", cmd->type);
@@ -812,8 +814,8 @@ static int sdk_ssvr_send_data(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
             log_error(ssvr->log, "errmsg:[%d] %s! fd:%u",
                   errno, strerror(errno), sck->fd);
             CLOSE(sck->fd);
-            ssvr->is_online_succ = false;
             wiov_clean(send);
+            SDK_SSVR_SET_ONLINE(ssvr, false);
             return SDK_ERR;
         }
         /* 只发送了部分数据 */

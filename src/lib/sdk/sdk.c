@@ -250,7 +250,7 @@ uint32_t sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
     sdk_ssvr_t *ssvr = ctx->ssvr;
 
     /* > 判断网络是否正常 */
-    if (!ssvr->is_online_succ) {
+    if (!SDK_SSVR_GET_ONLINE(ssvr)) {
         cb(cmd, data, size, NULL, 0, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "Network is still disconnect!");
         return -1; /* 网络已断开 */
