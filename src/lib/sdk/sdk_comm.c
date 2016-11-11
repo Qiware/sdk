@@ -435,7 +435,7 @@ int sdk_send_mgr_delete(sdk_cntx_t *ctx, uint32_t seq)
 }
 
 /******************************************************************************
- **函数名称: sdk_send_item_timeout_hdl
+ **函数名称: sdk_send_item_clean_timeout_hdl
  **功    能: 超时发送项的处理
  **输入参数:
  **     ctx: 全局对象
@@ -446,7 +446,7 @@ int sdk_send_mgr_delete(sdk_cntx_t *ctx, uint32_t seq)
  **注意事项:
  **作    者: # Qifeng.zou # 2016.11.10 15:04:50 #
  ******************************************************************************/
-static int sdk_send_item_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
+static int sdk_send_item_clean_timeout_hdl(sdk_cntx_t *ctx, sdk_send_item_t *item)
 {
     void *data;
     sdk_send_item_t key, *temp;
@@ -537,8 +537,15 @@ static int sdk_send_mgr_trav_timeout_cb(sdk_send_item_t *item, list_t *list)
     return 0;
 }
 
+/* 计算下一次遍历发送管理表的时间 */
+static int sdk_send_mgr_find_timeout_cb(sdk_send_item_t *item, time_t *next_trav_tm)
+{
+    *next_trav_tm = (*next_trav_tm < item->ttl)? *next_trav_tm : item->ttl;
+    return 0;
+}
+
 /******************************************************************************
- **函数名称: sdk_trav_send_item
+ **函数名称: sdk_send_mgr_trav
  **功    能: 遍历发送项
  **输入参数:
  **     ctx: 全局对象
@@ -548,16 +555,11 @@ static int sdk_send_mgr_trav_timeout_cb(sdk_send_item_t *item, list_t *list)
  **注意事项:
  **作    者: # Qifeng.zou # 2016.11.10 10:23:34 #
  ******************************************************************************/
-int sdk_trav_send_item(sdk_cntx_t *ctx)
+int sdk_send_mgr_trav(sdk_cntx_t *ctx)
 {
     list_t *list;
-    time_t tm = time(NULL);
     sdk_send_item_t *item;
     sdk_send_mgr_t *mgr = &ctx->mgr;
-
-    if (tm < mgr->next_trav_tm) {
-        return 0; /* 未超时 */
-    }
 
     log_debug(ctx->log, "Trav send item table!");
 
@@ -568,6 +570,7 @@ int sdk_trav_send_item(sdk_cntx_t *ctx)
     }
 
     pthread_rwlock_wrlock(&mgr->lock);
+    /* > 清除已超时的数据列表 */
     rbt_trav(mgr->tab, (trav_cb_t)sdk_send_mgr_trav_timeout_cb, (void *)list);
     while (1) {
         item = list_lpop(list);
@@ -575,16 +578,14 @@ int sdk_trav_send_item(sdk_cntx_t *ctx)
             break;
         }
 
-        sdk_send_item_timeout_hdl(ctx, item);
+        sdk_send_item_clean_timeout_hdl(ctx, item);
     }
     list_destroy(list, NULL, mem_dummy_dealloc);
 
-    if (rbt_num(mgr->tab)) {
-        mgr->next_trav_tm = tm + 3;
-    }
-    else {
-        mgr->next_trav_tm = tm + SDK_PING_MAX_SEC;
-    }
+    /* > 查找下一个超时时间 */
+    mgr->next_trav_tm = time(NULL) + SDK_SLEEP_MAX_SEC;
+    rbt_trav(mgr->tab, (trav_cb_t)sdk_send_mgr_find_timeout_cb, (void *)&mgr->next_trav_tm);
+
     pthread_rwlock_unlock(&mgr->lock);
 
     return 0;

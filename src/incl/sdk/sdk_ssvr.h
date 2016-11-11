@@ -9,6 +9,7 @@
 
 #define SDK_PING_MIN_SEC    (5)
 #define SDK_PING_MAX_SEC    (300)
+#define SDK_SLEEP_MAX_SEC   (300)
 
 /* COMM的UNIX-UDP路径 */
 #define sdk_comm_usck_path(conf, _path) \

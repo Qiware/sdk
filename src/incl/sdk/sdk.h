@@ -49,7 +49,7 @@ typedef struct
 /* 发送管理表 */
 typedef struct
 {
-    time_t next_trav_tm;                /* 下一次遍历的时间 */
+    time_t next_trav_tm;                /* 下一次遍历时间 */
     pthread_rwlock_t lock;              /* 读写锁 */
     uint32_t seq;                       /* 序列号 */
     rbt_tree_t *tab;                    /* 管理表 */
@@ -134,8 +134,7 @@ int sdk_send_mgr_delete(sdk_cntx_t *ctx, uint32_t seq);
 bool sdk_send_mgr_empty(sdk_cntx_t *ctx);
 sdk_send_item_t *sdk_send_mgr_query(sdk_cntx_t *ctx, uint32_t seq, lock_e lock);
 int sdk_send_mgr_unlock(sdk_cntx_t *ctx, lock_e lock);
-
-int sdk_trav_send_item(sdk_cntx_t *ctx);
+int sdk_send_mgr_trav(sdk_cntx_t *ctx);
 
 int sdk_send_succ_hdl(sdk_cntx_t *ctx, void *addr, size_t len);
 int sdk_send_fail_hdl(sdk_cntx_t *ctx, void *addr, size_t len);

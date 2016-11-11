@@ -150,20 +150,21 @@ static int sdk_ssvr_get_timeout(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     sdk_sck_t *sck = &ssvr->sck;
     sdk_send_mgr_t *mgr = &ctx->mgr;
-    time_t min, diff, tm = time(NULL);
+    time_t min = -1, diff, tm = time(NULL);
 
     if ((tm > ssvr->next_conn_tm)
-        || (!sdk_send_mgr_empty(ctx) && tm > mgr->next_trav_tm)
+        || (tm > mgr->next_trav_tm)
         || (tm > sck->next_kpalive_tm)) {
+        fprintf(stderr, "tm:%lu conn:%lu trav:%lu kpalive:%lu",
+                tm, ssvr->next_conn_tm, mgr->next_trav_tm, sck->next_kpalive_tm);
         return 0; /* 立即 */
     }
 
+
     min = ssvr->next_conn_tm - tm;
 
-    if (!sdk_send_mgr_empty(ctx)) {
-        diff = mgr->next_trav_tm - tm;
-        min = (min < diff)? min : diff;
-    }
+    diff = mgr->next_trav_tm - tm;
+    min = (min < diff)? min : diff;
 
     diff = sck->next_kpalive_tm - tm;
     min = (min < diff)? min : diff;
@@ -254,6 +255,7 @@ void *sdk_ssvr_routine(void *_ctx)
 
         timeout.tv_sec = sdk_ssvr_get_timeout(ctx, ssvr);
         timeout.tv_usec = 0;
+        fprintf(stderr, "sec:%lu\n", timeout.tv_sec);
         ret = select(ssvr->max+1, &ssvr->rset, &ssvr->wset, NULL, &timeout);
         if (ret < 0) {
             if (EINTR == errno) { continue; }
@@ -281,7 +283,7 @@ void *sdk_ssvr_routine(void *_ctx)
             sdk_ssvr_recv_proc(ctx, ssvr);
         }
 
-        sdk_trav_send_item(ctx);
+        sdk_send_mgr_trav(ctx);
     }
 
     abort();
@@ -425,7 +427,7 @@ static int sdk_ssvr_timeout_hdl(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     time_t tm = time(NULL);
     sdk_sck_t *sck = &ssvr->sck;
 
-    sdk_trav_send_item(ctx);
+    sdk_send_mgr_trav(ctx);
 
     /* 如果网路已断开, 则进行重连 */
     if (sck->fd < 0) {
@@ -662,6 +664,9 @@ static int sdk_ssvr_proc_cmd(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr, const sdk_cmd_t 
 {
     sdk_sck_t *sck = &ssvr->sck;
     wiov_t *send = &sck->send;
+    sdk_send_mgr_t *mgr = &ctx->mgr;
+
+    mgr->next_trav_tm = time(NULL);
 
     switch (cmd->type) {
         case SDK_CMD_SEND:
