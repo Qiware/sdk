@@ -158,14 +158,14 @@ static int sdk_ssvr_get_timeout(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
         return 0; /* 立即 */
     }
 
-    min = tm - ssvr->next_conn_tm;
+    min = ssvr->next_conn_tm - tm;
 
     if (!sdk_send_mgr_empty(ctx)) {
-        diff = tm - mgr->next_trav_tm;
+        diff = mgr->next_trav_tm - tm;
         min = (min < diff)? min : diff;
     }
 
-    diff = tm - sck->next_kpalive_tm;
+    diff = sck->next_kpalive_tm - tm;
     min = (min < diff)? min : diff;
 
     if (!sdk_queue_empty(&ctx->sendq)) {
