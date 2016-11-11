@@ -150,9 +150,9 @@ static int sdk_ssvr_get_timeout(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
 {
     sdk_sck_t *sck = &ssvr->sck;
     sdk_send_mgr_t *mgr = &ctx->mgr;
-    time_t min = -1, diff, tm = time(NULL);
+    time_t min = 3600, diff, tm = time(NULL);
 
-    if ((tm > ssvr->next_conn_tm)
+    if ((!SDK_SSVR_GET_ONLINE(ssvr) && (tm > ssvr->next_conn_tm))
         || (tm > mgr->next_trav_tm)
         || (tm > sck->next_kpalive_tm)) {
         fprintf(stderr, "tm:%lu conn:%lu trav:%lu kpalive:%lu",
@@ -161,7 +161,9 @@ static int sdk_ssvr_get_timeout(sdk_cntx_t *ctx, sdk_ssvr_t *ssvr)
     }
 
 
-    min = ssvr->next_conn_tm - tm;
+    if (!SDK_SSVR_GET_ONLINE(ssvr)) {
+        min = ssvr->next_conn_tm - tm;
+    }
 
     diff = mgr->next_trav_tm - tm;
     min = (min < diff)? min : diff;

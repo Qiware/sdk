@@ -58,7 +58,7 @@ void *sdk_worker_routine(void *_ctx)
 
         worker->max = worker->cmd_sck_id;
 
-        timeout.tv_sec = 1;
+        timeout.tv_sec = SDK_SLEEP_MAX_SEC;
         timeout.tv_usec = 0;
         ret = select(worker->max+1, &worker->rdset, NULL, NULL, &timeout);
         if (ret < 0) {
