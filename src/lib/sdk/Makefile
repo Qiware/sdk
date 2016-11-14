@@ -18,9 +18,9 @@ INCLUDE = -I. \
 INCLUDE += $(GLOBAL_INCLUDE)
 LIBS_PATH = -L$(PROJ)/lib
 # 注: 静态库请放在动态库之前
-STATIC_LINK_LIB_LIST = libcjson.a
-STATIC_LINK_LIB_LIST += $(G_STATIC_LIBS)
-LIBS = $(call func_find_static_link_lib,$(STATIC_LINK_LIB_PATH),$(STATIC_LINK_LIB_LIST))
+STATIC_LIB_LIST = libcjson.a
+STATIC_LIB_LIST += $(G_STATIC_LIBS)
+LIBS = $(call func_find_static_link_lib,$(STATIC_LIB_PATH),$(STATIC_LIB_LIST))
 LIBS += -lpthread -lm -lcurl -lprotobuf-c
 LIBS += $(SHARED_LIB)
 
@@ -70,9 +70,10 @@ $(TARGET_A): $(OBJS)
 	@echo "$@ is OK!"
 
 $(OBJS): %.o : %.c $(HEADS)
+	@echo "LIBS: XXXXXXXXXXXXXXXXX $(LIBS)"
 	@$(CC) $(CFLAGS) -c $< -o $@ $(INCLUDE)
 	@echo "CC $(PWD)/$<"
 
 clean:
-	@rm -fr server/*.o proxy/*.o $(PROJ_LIB)/$(TARGET) $(PROJ_LIB)/$(TARGET_A)
-	@echo "rm -fr server/*.o proxy/*.o $(PROJ_LIB)/$(TARGET) $(PROJ_LIB)/$(TARGET_A)"
+	@rm -fr *.o core/*.o $(PROJ_LIB)/$(TARGET) $(PROJ_LIB)/$(TARGET_A)
+	@echo "rm -fr *.o core/*.o $(PROJ_LIB)/$(TARGET) $(PROJ_LIB)/$(TARGET_A)"

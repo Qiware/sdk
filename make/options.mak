@@ -9,7 +9,7 @@
 
 # 静态链接库路径
 STATIC_LIBS = 
-STATIC_LINK_LIB_PATH = $(PROJ_LIB) \
+STATIC_LIB_PATH = $(PROJ_LIB) \
 					  /usr/lib/ \
 					  /usr/local/lib \
 					  /usr/lib/x86_64-linux-gnu/

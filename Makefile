@@ -27,7 +27,7 @@ LIB_DIR = "src/lib"
 DIR += "$(LIB_DIR)/sdk"
 
 DEMO_DIR = "src/demo"
-DIR += "$(DEMO_DIR)/sdk"
+DIR += "$(DEMO_DIR)/client"
 
 # 获取系统配置
 CPU_CORES = $(call func_cpu_cores)
