@@ -18,7 +18,7 @@ INCLUDE = -I. \
 INCLUDE += $(GLOBAL_INCLUDE)
 LIBS_PATH = -L$(PROJ)/lib
 # 注: 静态库请放在动态库之前
-STATIC_LIB_LIST = libcjson.a
+STATIC_LIB_LIST = 
 STATIC_LIB_LIST += $(G_STATIC_LIBS)
 LIBS = $(call func_find_static_link_lib,$(STATIC_LIB_PATH),$(STATIC_LIB_LIST))
 LIBS += -lpthread -lm -lcurl -lprotobuf-c
@@ -46,6 +46,8 @@ SRC_LIST = ./sdk.c \
 		   ./core/xml_tree.c \
 		   ./core/xml_print.c \
 		   ./core/hash_tab.c \
+		   ./core/cJSON.c \
+		   ./core/cJSON_Utils.c \
 		   ./mesg/mesg.pb-c.c
 
 OBJS = $(subst .c,.o, $(SRC_LIST))
