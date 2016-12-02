@@ -1,4 +1,5 @@
 #include "sdk.h"
+#include "lock.h"
 #include "redo.h"
 #include "rb_tree.h"
 
@@ -384,20 +385,30 @@ uint32_t sdk_gen_seq(sdk_cntx_t *ctx)
  **输入参数:
  **     ctx: 全局对象
  **     item: 发送项
+ **     lock: 锁类型
  **输出参数: NONE
  **返    回: 0:成功 !0:失败
  **实现描述: 
- **注意事项:
+ **注意事项: 需要外部调用sdk_send_mgr_unlock()进行解锁操作
  **作    者: # Qifeng.zou # 2016.11.10 10:09:45 #
  ******************************************************************************/
-int sdk_send_mgr_insert(sdk_cntx_t *ctx, sdk_send_item_t *item)
+int sdk_send_mgr_insert(sdk_cntx_t *ctx, sdk_send_item_t *item, lock_e lock)
 {
     int ret;
     sdk_send_mgr_t *mgr = &ctx->mgr;
 
-    pthread_rwlock_wrlock(&mgr->lock);
+    if (RDLOCK == lock) {
+        pthread_rwlock_rdlock(&mgr->lock);
+    }
+    else if (WRLOCK == lock) {
+        pthread_rwlock_wrlock(&mgr->lock);
+    }
+
     ret = rbt_insert(mgr->tab, item);
-    pthread_rwlock_unlock(&mgr->lock);
+    if (0 != ret) {
+        pthread_rwlock_unlock(&mgr->lock);
+        return ret;
+    }
 
     return ret;
 }

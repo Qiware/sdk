@@ -257,7 +257,7 @@ void *sdk_ssvr_routine(void *_ctx)
 
         timeout.tv_sec = sdk_ssvr_get_timeout(ctx, ssvr);
         timeout.tv_usec = 0;
-        fprintf(stderr, "sec:%lu\n", timeout.tv_sec);
+        fprintf(stderr, "Sleep sec:%lu\n", timeout.tv_sec);
         ret = select(ssvr->max+1, &ssvr->rset, &ssvr->wset, NULL, &timeout);
         if (ret < 0) {
             if (EINTR == errno) { continue; }
@@ -1122,7 +1122,7 @@ static int sdk_ssvr_http_conn_info(sdk_cntx_t *ctx, char *conn_info_str)
     curl_slist_free_all(chunk);
     curl_global_cleanup();
 
-    log_debug(ctx->log, "data:%s", conn_info_str);
+    log_debug(ctx->log, "url:%s\n\tdata:%s", url, conn_info_str);
 
     return ret;
 }

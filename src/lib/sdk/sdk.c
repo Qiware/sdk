@@ -301,7 +301,7 @@ uint32_t sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
     item->param = param;
 
     /* > 放入管理表 */
-    if (sdk_send_mgr_insert(ctx, item)) {
+    if (sdk_send_mgr_insert(ctx, item, WRLOCK)) {
         cb(cmd, data, size, NULL, 0, SDK_STAT_SEND_FAIL, param);
         log_error(ctx->log, "Insert send mgr tab failed!");
         FREE(addr);
@@ -311,6 +311,8 @@ uint32_t sdk_async_send(sdk_cntx_t *ctx, uint16_t cmd, uint64_t to,
 
     /* > 放入发送队列 */
     sdk_queue_rpush(&ctx->sendq, (void *)addr);
+
+    sdk_send_mgr_unlock(ctx, WRLOCK);
 
     /* > 通知发送线程 */
     sdk_cli_cmd_send_req(ctx);
